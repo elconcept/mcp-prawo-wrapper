@@ -6,7 +6,7 @@ One MCP server for Polish legal data.
 
 Ten independent connectors - case law, legislation, the company register, tax
 rulings, public procurement, data-protection decisions, plus EU extras - behind
-four tools. Each connector stays a separate package with its own repository;
+five tools. Each connector stays a separate package with its own repository;
 this server spawns them on demand and translates between their conventions.
 
 "Prawo" is Polish for "law"; the name follows yargi-mcp's move of naming a
@@ -19,8 +19,8 @@ per database - ten installs and ten config entries before the first question.
 [yargi-mcp](https://github.com/saidsurucu/yargi-mcp) showed the fix for
 Turkish law: 16 institutions, one server. prawo-pl-mcp does the same for Poland:
 
-- Four tools instead of 42. `pl_list_sources`, `pl_search`, `pl_get_document`,
-  `pl_call` - fewer tool schemas means less context spent before the LLM starts
+- Five tools instead of 42. `pl_list_sources`, `pl_search`, `pl_get_document`,
+  `pl_call` and `pl_coverage` - fewer tool schemas means less context spent before the LLM starts
   working.
 - One convention. The connectors grew organically: `dateFrom` here, `date_from`
   there, pages counted from 0 or from 1 depending on the repo. Here `page` is
