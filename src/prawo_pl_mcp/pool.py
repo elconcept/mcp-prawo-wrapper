@@ -17,7 +17,7 @@ import shlex
 import shutil
 
 from fastmcp import Client
-from fastmcp.client.transports import StdioTransport
+from fastmcp.client.transports import StdioTransport, StreamableHttpTransport
 
 from .registry import Source
 
@@ -28,6 +28,36 @@ CALL_TIMEOUT_S = float(os.environ.get("PRAWO_PL_MCP_TIMEOUT", "90"))
 
 class SourceUnavailable(Exception):
     """Zrodlo nieosiagalne po przejsciu calej drabinki provisioning."""
+
+
+def _remote_transport(source: Source) -> StreamableHttpTransport | None:
+    """Reuse an existing MCP server configured by the deployer.
+
+    Repertorium must use its already-running instance; other sources preserve
+    the old lazy npx/uvx behavior when URL is not set.
+    """
+    key = source.id.upper().replace("-", "_")
+    url = os.environ.get(f"PRAWO_PL_MCP_URL_{key}", "").strip()
+    if not url:
+        if source.runtime == "remote":
+            raise SourceUnavailable(
+                f"Set PRAWO_PL_MCP_URL_{key} for the existing Repertorium server"
+            )
+        return None
+    if not url.startswith(("https://", "http://")):
+        raise SourceUnavailable(f"Invalid remote URL scheme for {source.id}")
+    headers = {}
+    bearer = os.environ.get(f"PRAWO_PL_MCP_BEARER_{key}")
+    cid = os.environ.get(f"PRAWO_PL_MCP_CF_CLIENT_ID_{key}")
+    secret = os.environ.get(f"PRAWO_PL_MCP_CF_CLIENT_SECRET_{key}")
+    if (cid is None) != (secret is None):
+        raise SourceUnavailable(f"Incomplete Cloudflare Access credentials for {source.id}")
+    if bearer:
+        headers["Authorization"] = f"Bearer {bearer}"
+    if cid and secret:
+        headers["CF-Access-Client-Id"] = cid
+        headers["CF-Access-Client-Secret"] = secret
+    return StreamableHttpTransport(url=url, headers=headers)
 
 
 def _spawn_spec(source: Source) -> tuple[str, list[str]]:
@@ -69,24 +99,26 @@ class SourcePool:
             if client is not None and client.is_connected():
                 return client
 
-            command, args = _spawn_spec(source)
-            if not _runtime_present(command):
-                hint = {
-                    "npx": "Node.js >= 18 (npx) not found on PATH",
-                    "uvx": "uv (uvx) not found on PATH",
-                }.get(source.runtime, f"'{command}' not found on PATH")
-                raise SourceUnavailable(
-                    f"Source '{source.id}' needs {hint}. Install the runtime or set "
-                    f"PRAWO_PL_MCP_CMD_{source.id.upper().replace('-', '_')} to a local command."
-                )
-
-            transport = StdioTransport(command=command, args=args, keep_alive=True)
+            transport = _remote_transport(source)
+            if transport is None:
+                command, args = _spawn_spec(source)
+                if not _runtime_present(command):
+                    hint = {
+                        "npx": "Node.js >= 18 (npx) not found on PATH",
+                        "uvx": "uv (uvx) not found on PATH",
+                    }.get(source.runtime, f"'{command}' not found on PATH")
+                    raise SourceUnavailable(
+                        f"Source '{source.id}' needs {hint}. Install the runtime or set "
+                        f"PRAWO_PL_MCP_CMD_{source.id.upper().replace('-', '_')} to a local command."
+                    )
+                transport = StdioTransport(command=command, args=args, keep_alive=True)
             client = Client(transport, timeout=CALL_TIMEOUT_S)
             try:
                 await asyncio.wait_for(client.__aenter__(), timeout=INIT_TIMEOUT_S)
-            except Exception as exc:  # spawn/handshake failed - czytelny blad, nie traceback
+            except Exception as exc:
+                # Never include credentials, URLs or transport args in messages.
                 raise SourceUnavailable(
-                    f"Source '{source.id}' failed to start ({command} {' '.join(args)}): {exc}"
+                    f"Source '{source.id}' could not connect: {type(exc).__name__}"
                 ) from exc
             self._clients[source.id] = client
             return client
@@ -100,6 +132,8 @@ class SourcePool:
         """
         client = await self.get_client(source)
         result = await client.call_tool(tool, arguments)
+        if getattr(result, "is_error", False) or getattr(result, "isError", False):
+            raise RuntimeError(f"Source {source.id}/{tool} returned an MCP tool error")
         parts: list[str] = []
         for block in result.content or []:
             text = getattr(block, "text", None)
