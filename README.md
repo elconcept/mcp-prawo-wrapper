@@ -155,3 +155,41 @@ Apache-2.0. Individual connectors carry their own licenses (MIT or Apache-2.0),
 their own rate limits and their own terms toward upstream databases - the
 aggregator adds no caching and no transformation beyond pagination, so each
 connector's constraints apply unchanged.
+
+## Phase 1 — Repertorium-first discovery (Synology reuse)
+
+Use `pl_find(query, jurisdiction='pl')` for every *new* legal discovery question.
+It calls **the existing Repertorium MCP** first; the semantic index already
+aggregates SAOS, CBOSA/NSA, ISAP, UODO, EUREKA and other legal sources.
+The response preserves native document refs such as `saos:166511`,
+`eli:DU/2024/917`, `sn:...`, along with snippets and source URLs.
+`pl_get_by_ref(document_ref, page=1)` fetches full text through the
+correct native backend when connected. Unconnected families such as `sn`
+retain their primary URL; no fake identifier or empty result is generated.
+
+**Re-use already deployed MCP servers, not shadow npx copies:**
+
+```shell
+export PRAWO_PL_MCP_URL_REPERTORIUM='https://<your-authenticated-repertorium>/mcp'
+export PRAWO_PL_MCP_URL_SAOS='https://<your-authenticated-saos>/mcp'
+export PRAWO_PL_MCP_URL_NSA='https://<your-authenticated-nsa>/mcp'
+export PRAWO_PL_MCP_URL_ISAP='https://<your-authenticated-isap>/mcp'
+# Example per-source Cloudflare Access service authentication:
+export PRAWO_PL_MCP_CF_CLIENT_ID_SAOS='<client-id>'
+export PRAWO_PL_MCP_CF_CLIENT_SECRET_SAOS='<secret>'
+# Or PRAWO_PL_MCP_BEARER_SAOS for a dedicated bearer-protected endpoint.
+```
+
+All `PRAWO_PL_MCP_URL_<SOURCE>` overrides are **server-side deployment
+settings**, not LLM tool arguments. Headers are never included in errors.
+Remote URLs use the FastMCP Streamable HTTP transport. For sources without
+a configured URL, the original npx/uvx lazy spawn remains available — except
+Repertorium, which is always remote-only and never cloned.
+
+Before exposing this aggregator externally, configure its own Cloudflare
+Access policy and restrict network connectivity. Do not expose internal
+upstream unauthenticated ports to the public Internet.
+
+**Status:** phase-1 code on a draft PR. It does not deploy automatically
+and does not yet merge full results of SAOS/NSA/MS searches. The second phase
+will add source adapters and MS discovery-cache federation.
