@@ -136,3 +136,18 @@ async def test_live_ms_is_opt_in_when_existing_sources_have_hits():
     deep = await find_case_law("I C 2715/21", adapters, deep=True)
     assert len(deep.records) == 1
     assert "ms_live" in [x[0] for x in seen]
+
+
+
+async def test_merge_prefers_retrieval_ref_with_verified_full_text():
+    from prawo_pl_mcp.case_law_federation import CaseHit
+    old = hit("saos", "41")
+    complete = CaseHit(
+        source="ms_live", source_id="MS-41", case_number=old.case_number,
+        court=old.court, judgment_date=old.judgment_date,
+        document_type=old.document_type, full_text_available=True,
+    )
+    result = combine_hits([old, complete])
+    assert result[0]["ref"] == "ms_live:MS-41"
+    assert result[0]["full_text_available"] is True
+    assert len(result[0]["sources"]) == 2
