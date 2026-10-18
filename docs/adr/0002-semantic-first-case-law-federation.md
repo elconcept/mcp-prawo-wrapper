@@ -12,14 +12,25 @@ standalone connectors from LEX MCP Portal during the pilot.
 
 ### Desired client API
 
-- \`pl_find_case_law(query, case_number?, court_kind=auto, deep=false)\`
-- \`pl_get_case_law(document_ref, page=1)\`
+Expose one **MCP server** and a common public workflow:
 
-The single reference \`source:id\` is unambiguous. Retrieval routes directly
-to the source that actually supplied the record. The wrapper preserves all
-original URLs and separate source identities, and paginates long document text.
+- `pl_find(query, domain=auto, jurisdiction=auto, deep=false)`
+- `pl_get_by_ref(document_ref, page=1)`
 
-### Search flow
+The single reference `source:id` identifies the source and provider ID;
+all source links are retained, and long text is paginated.
+
+Internal domain routers under `pl_find`: case law (`find_case_law` from
+this PR), Polish legislation (Repertorium -> official ISAP/ELI), EU
+legislation/CJEU (Repertorium -> EU SPARQL/EUR-Lex) and dedicated KRS/UODO
+adapters when the user asks about those subjects. Do not confuse an act
+with a judgment. Repertorium is a lead generator, not a completeness filter.
+
+The existing source-specific `pl_search`, `pl_get_document`, `pl_call`
+remain backward-compatible expert interfaces. This draft includes the
+case-law routing core; universal MCP tools and live adapter wiring are
+**not yet deployed**.
+### Case-law search flow
 
 1. **Repertorium** semantic search (short deadline, optional; never a source
    of truth or proof of absence). Its snippets, document IDs and deep links
@@ -89,7 +100,7 @@ mutates that database.
 - On no evidence return \`not_found_in_checked_sources\`, never
   \`judgment_does_not_exist\`.
 
-### Integration gates
+### Universal search integration gates
 
 1. [x] \`mcp-saos\` live fallback prevents false empty responses (PR #3 merged).
 2. [x] Create independent pilot MS MCP with 6 tools (draft PR #4).
