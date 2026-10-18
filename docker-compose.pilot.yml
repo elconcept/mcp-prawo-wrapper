@@ -1,0 +1,33 @@
+# PRIVATE pilot; no Lex registration, no public tunnel.
+# Existing NAS MCP services reused through private LAN ports.
+services:
+  mcp-prawo-wrapper:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: mcp-prawo-wrapper:repertorium-first-pilot
+    container_name: mcp-prawo-wrapper-pilot
+    restart: unless-stopped
+    read_only: true
+    user: "1026:100"
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:size=64m
+    environment:
+      - TZ=Europe/Warsaw
+      - PRAWO_PL_MCP_AUDIT_DIR=/tmp
+      - PRAWO_PL_MCP_URL_REPERTORIUM=http://${SYNOLOGY_LAN_HOST:?Private LAN IP required}:8410/mcp
+      - PRAWO_PL_MCP_URL_SAOS=http://${SYNOLOGY_LAN_HOST}:8402/mcp
+      - PRAWO_PL_MCP_URL_NSA=http://${SYNOLOGY_LAN_HOST}:8405/mcp
+      - PRAWO_PL_MCP_URL_ISAP=http://${SYNOLOGY_LAN_HOST}:8406/mcp
+      - PRAWO_PL_MCP_URL_UODO=http://${SYNOLOGY_LAN_HOST}:8403/mcp
+      - PRAWO_PL_MCP_URL_KRS=http://${SYNOLOGY_LAN_HOST}:8407/mcp
+      - PRAWO_PL_MCP_API_KEY=${PRAWO_PL_MCP_API_KEY:?Pilot API key required}
+    ports:
+      - "127.0.0.1:8412:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; socket.create_connection(('127.0.0.1',8000),3).close()"]
+      interval: 30s
+      timeout: 5s
+      retries: 3

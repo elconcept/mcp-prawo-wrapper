@@ -19,7 +19,7 @@ per database - ten installs and ten config entries before the first question.
 [yargi-mcp](https://github.com/saidsurucu/yargi-mcp) showed the fix for
 Turkish law: 16 institutions, one server. prawo-pl-mcp does the same for Poland:
 
-- Five tools instead of 42. `pl_list_sources`, `pl_search`, `pl_get_document`,
+- Seven tools instead of 42. `pl_list_sources`, `pl_search`, `pl_get_document`,
   `pl_call` and `pl_coverage` - fewer tool schemas means less context spent before the LLM starts
   working.
 - One convention. The connectors grew organically: `dateFrom` here, `date_from`
@@ -34,7 +34,7 @@ Turkish law: 16 institutions, one server. prawo-pl-mcp does the same for Poland:
   `article_number` (eu-compliance) is visible without spawning the connector or
   reading an upstream error. `pl_call` checks the names it was given against
   the connector's own schema and says which one it meant.
-- Nothing preinstalled. Connectors run as subprocesses via `npx -y` / `uvx`,
+- Remote first (if configured). Otherwise, connectors run as subprocesses via `npx -y` / `uvx`,
   downloaded on the first call to a given source and kept alive afterwards.
   A source that cannot start reports a readable error while the rest keep
   working.
@@ -67,6 +67,8 @@ Polish sources are tagged `group: pl`, EU extras `group: eu` - filter with
 
 | Tool | What it does |
 |---|---|
+| `pl_find` | Required Repertorium-first semantic discovery for new questions, retaining source document refs and links. |
+| `pl_get_by_ref` | Fetch full text using the native `source:document_id` returned by Repertorium. |
 | `pl_list_sources` | Catalog of sources (no subprocess spawned). With `source_id`: live tool schemas of one connector. |
 | `pl_search` | Search any source with normalized parameters; source-specific filters via `extra`. |
 | `pl_get_document` | Full document by identifier (judgment id, ELI, KRS number, signature...), paginated. |
@@ -74,7 +76,7 @@ Polish sources are tagged `group: pl`, EU extras `group: eu` - filter with
 | `pl_coverage` | Declare what this connector covers, when each family was captured, and - explicitly - what it does NOT cover. Every gap carries a fallback. |
 
 The typical flow an LLM follows (spelled out in the server's `instructions`):
-`pl_list_sources` → `pl_search` → `pl_get_document`, with `pl_call` for the
+`pl_find` → `pl_get_by_ref`, with `pl_list_sources` / `pl_search` / `pl_get_document` / `pl_call` for the
 specialized tools each connector brings.
 
 ## Install
@@ -155,3 +157,41 @@ Apache-2.0. Individual connectors carry their own licenses (MIT or Apache-2.0),
 their own rate limits and their own terms toward upstream databases - the
 aggregator adds no caching and no transformation beyond pagination, so each
 connector's constraints apply unchanged.
+
+## Phase 1 — Repertorium-first discovery (Synology reuse)
+
+Use `pl_find(query, jurisdiction='pl')` for every *new* legal discovery question.
+It calls **the existing Repertorium MCP** first; the semantic index already
+aggregates SAOS, CBOSA/NSA, ISAP, UODO, EUREKA and other legal sources.
+The response preserves native document refs such as `saos:166511`,
+`eli:DU/2024/917`, `sn:...`, along with snippets and source URLs.
+`pl_get_by_ref(document_ref, page=1)` fetches full text through the
+correct native backend when connected. Unconnected families such as `sn`
+retain their primary URL; no fake identifier or empty result is generated.
+
+**Re-use already deployed MCP servers, not shadow npx copies:**
+
+```shell
+export PRAWO_PL_MCP_URL_REPERTORIUM='https://<your-authenticated-repertorium>/mcp'
+export PRAWO_PL_MCP_URL_SAOS='https://<your-authenticated-saos>/mcp'
+export PRAWO_PL_MCP_URL_NSA='https://<your-authenticated-nsa>/mcp'
+export PRAWO_PL_MCP_URL_ISAP='https://<your-authenticated-isap>/mcp'
+# Example per-source Cloudflare Access service authentication:
+export PRAWO_PL_MCP_CF_CLIENT_ID_SAOS='<client-id>'
+export PRAWO_PL_MCP_CF_CLIENT_SECRET_SAOS='<secret>'
+# Or PRAWO_PL_MCP_BEARER_SAOS for a dedicated bearer-protected endpoint.
+```
+
+All `PRAWO_PL_MCP_URL_<SOURCE>` overrides are **server-side deployment
+settings**, not LLM tool arguments. Headers are never included in errors.
+Remote URLs use the FastMCP Streamable HTTP transport. For sources without
+a configured URL, the original npx/uvx lazy spawn remains available — except
+Repertorium, which is always remote-only and never cloned.
+
+Before exposing this aggregator externally, configure its own Cloudflare
+Access policy and restrict network connectivity. Do not expose internal
+upstream unauthenticated ports to the public Internet.
+
+**Status:** phase-1 code on a draft PR. It does not deploy automatically
+and does not yet merge full results of SAOS/NSA/MS searches. The second phase
+will add source adapters and MS discovery-cache federation.
