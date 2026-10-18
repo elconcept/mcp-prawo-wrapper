@@ -88,6 +88,8 @@ def combine_hits(hits: list[CaseHit]) -> list[dict]:
                 "sources": [],
             }
         record = grouped[key]
+        if hit.full_text_available and not record["full_text_available"]:
+            record["ref"] = f"{hit.source}:{hit.source_id}"
         record["full_text_available"] |= hit.full_text_available
         record["sources"].append({
             "provider": hit.source,
@@ -133,7 +135,7 @@ async def find_case_law(
             semantic_hints = s.hits if s.status == "ok" else []
             if s.status == "upstream_error":
                 warnings.append(s.note or "Repertorium unavailable; source search continued.")
-        except (Exception, asyncio.TimeoutError) as exc:
+        except Exception:
             checked["repertorium"] = "upstream_error"
             warnings.append("Repertorium failed or timed out; source search continued.")
 
