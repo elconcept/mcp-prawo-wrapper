@@ -23,6 +23,7 @@ from .pagination import paginate
 from .pool import POOL, SourceUnavailable
 from .registry import SOURCES, Source, catalog, get_source
 from .coverage import Coverage, build_coverage
+from .repertorium import parse_repertorium, source_for_ref
 
 
 # Strukturalne kody bledow - drift test: kazdy kod w INSTRUCTIONS.
@@ -381,6 +382,8 @@ async def pl_get_document(
     s = _resolve(source)
     _otel_tag(s.id)
     spec = s.get
+    if spec is None:
+        raise PLLegalError('invalid_arg', f'Source {s.id} supports discovery only; use pl_find')
     page = _resolve_page(page, page_number)
 
     args: dict[str, Any] = dict(extra or {})
@@ -460,7 +463,63 @@ async def pl_call(
     return text
 
 
-for _tool in (pl_list_sources, pl_search, pl_get_document, pl_call):
+
+# -------- universal semantic-first discovery (phase 1) --------
+
+async def pl_find(query: str, jurisdiction: str = "pl") -> str:
+    """Search Repertorium FIRST for every general legal research request.
+
+    Its aggregated semantic search spans case-law, statutes and rulings from
+    distinct data sources. Preserve its snippets and native document_id keys;
+    follow with pl_get_by_ref for complete text and authoritative metadata.
+    No duplicate SAOS/NSA/ISAP servers are spawned when configured with
+    PRAWO_PL_MCP_URL_<SOURCE> to use existing Synology MCP services.
+    """
+    started = time.monotonic()
+    if not query or not query.strip():
+        raise PLLegalError("invalid_arg", "query is required")
+    if jurisdiction not in ("pl", "eu"):
+        raise PLLegalError("invalid_arg", "jurisdiction must be pl or eu")
+    try:
+        semantic = await _proxy_call(
+            _resolve("repertorium"), "szukaj_repertorium",
+            {"q": query.strip(), "jurysdykcja": jurisdiction},
+        )
+    except PLLegalError as exc:
+        _audited("pl_find", "repertorium", {"jurisdiction": jurisdiction}, started,
+                 {}, error=exc.code)
+        raise
+    parsed = parse_repertorium(semantic)
+    parsed["jurisdiction"] = jurisdiction
+    _audited("pl_find", "repertorium", {"jurisdiction": jurisdiction},
+             started, {"hits": len(parsed["results"])})
+    return json.dumps(parsed, ensure_ascii=False)
+
+
+async def pl_get_by_ref(document_ref: str, page: int = 1) -> str:
+    """Follow the primary-source document ID supplied by Repertorium.
+
+    SAOS: id numeric, ELI: DU/YYYY/NNN, NSA: CBOSA doc_id, etc.
+    For court material lacking a connected full-text connector, pl_find's
+    direct source URL remains available (never invent another provider ID).
+    """
+    route = source_for_ref(document_ref)
+    if route is None:
+        raise PLLegalError(
+            "source_unavailable",
+            f"No verified full-text backend for '{document_ref}'. "
+            "Use the source_url returned by pl_find, or add the native connector."
+        )
+    source, ident = route
+    if source == "ms" and "ms" not in SOURCES:
+        raise PLLegalError(
+            "source_unavailable",
+            "MS MCP is not registered yet. Follow the source_url from pl_find."
+        )
+    return await pl_get_document(source, ident, page=page)
+
+
+for _tool in (pl_find, pl_get_by_ref, pl_list_sources, pl_search, pl_get_document, pl_call):
     mcp.tool(_tool, annotations=READ_ONLY)
 
 
