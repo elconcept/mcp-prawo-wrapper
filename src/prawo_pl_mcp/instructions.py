@@ -13,26 +13,35 @@ INSTRUCTIONS = """\
 One MCP server for Polish legal data. Aggregates independent MCP connectors
 (case law, legislation, company register, tax rulings, public procurement,
 data-protection decisions + optional EU corpus) behind 4 unified tools.
-Connectors run as on-demand subprocesses; the first call to a source may take
-several seconds (package download + spawn), subsequent calls are fast.
+Existing remote MCP services are preferred when PRAWO_PL_MCP_URL_<SOURCE> is configured; other connectors retain on-demand subprocesses. Repertorium is remote-only and must point to its already running instance.
 
 ## Call order
 
-1. `pl_list_sources` - start here. Without arguments: catalog of sources
+0. For EVERY NEW general legal research question, call `pl_find` FIRST,
+   without choosing SAOS/NSA/ISAP yourself. It queries the actual Repertorium
+   semantic aggregator across normative acts, judgments and decisions; results
+   include native document_ref, excerpts and source URLs.
+   A semantic hit is a lead to the correct source, NOT a substitute for
+   reading full text. Never pretend an unavailable semantic service returned 0.
+1. Use `pl_get_by_ref` for the full text of an identified hit, e.g.
+   saos:166511 or eli:DU/2024/917. It routes by Repertorium's document_id prefix;
+   DO NOT infer the backend from a URL (SAOS hits can link to orzeczenia.ms.gov.pl
+   or www.sn.pl).
+2. Expert override `pl_list_sources` - start here. Without arguments: catalog of sources
    (id, coverage, capabilities, native tools) plus `native_params` - the native
    parameter name each unified parameter maps to for that source. With
    `source_id`: live tool schemas of that connector - check before using
    `pl_call` or source-specific `extra` parameters.
-2. `pl_search` - unified search across any source. Common parameters
+3. `pl_search` - unified search across any source. Common parameters
    (`query`, `date_from`, `date_to`, `page`, `limit`) are translated to the
    source's native names; pass source-specific filters via `extra` (native
    names, see `native_params` or `pl_list_sources(source_id=...)`).
-3. `pl_get_document` - full document by source + identifier (judgment ID or
+4. `pl_get_document` - full document by source + identifier (judgment ID or
    case signature, ELI, KRS number, interpretation ID...). Long documents are
    paginated at ~5000 characters per page; iterate `page` while `has_more` is
    true. Sources that paginate server-side report `pagination` = "native" and
    put their own page counter in the text.
-4. `pl_call` - escape hatch: any native tool of any source (citator checks,
+5. `pl_call` - escape hatch: any native tool of any source (citator checks,
    statistics, board composition, dictionaries...). Use when unified tools do
    not cover the operation. Verify the schema first via
    `pl_list_sources(source_id=...)`.
@@ -53,7 +62,7 @@ several seconds (package download + spawn), subsequent calls are fast.
 - Do not answer past the edge of this federation: this server holds no corpus of
   its own. When a search comes back empty, call `pl_coverage` and relay what it
   says is missing. Absence here is not absence in Polish law.
-- Legal answers require documents, not search snippets: after `pl_search`,
+- Legal answers require documents, not search snippets: after `pl_find` or `pl_search`,
   fetch the actual text with `pl_get_document` before quoting or reasoning.
 - NEVER invent case signatures, ELI identifiers, KRS numbers or dates - use
   only values returned by tools. Quote verbatim from document content.
@@ -71,7 +80,7 @@ Errors carry a `[code]` prefix:
 - `unknown_tool` - native tool name not exposed by that source (pl_call).
   Check `pl_list_sources(source_id=...)`.
 - `invalid_arg` - parameter out of range or missing. Fix per message and retry.
-- `source_unavailable` - connector could not start (missing Node/uv runtime or
+- `source_unavailable` - existing remote MCP is unconfigured/unreachable, or connector could not start (missing Node/uv runtime or
   package unreachable). Report to the user with the message hint; other sources
   keep working - consider an alternative source.
 - `upstream_error` - the connector itself errored (its own [code] is preserved
