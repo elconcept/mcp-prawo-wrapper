@@ -19,7 +19,7 @@ per database - ten installs and ten config entries before the first question.
 [yargi-mcp](https://github.com/saidsurucu/yargi-mcp) showed the fix for
 Turkish law: 16 institutions, one server. prawo-pl-mcp does the same for Poland:
 
-- Five tools instead of 42. `pl_list_sources`, `pl_search`, `pl_get_document`,
+- Seven tools instead of 42. `pl_list_sources`, `pl_search`, `pl_get_document`,
   `pl_call` and `pl_coverage` - fewer tool schemas means less context spent before the LLM starts
   working.
 - One convention. The connectors grew organically: `dateFrom` here, `date_from`
@@ -34,7 +34,7 @@ Turkish law: 16 institutions, one server. prawo-pl-mcp does the same for Poland:
   `article_number` (eu-compliance) is visible without spawning the connector or
   reading an upstream error. `pl_call` checks the names it was given against
   the connector's own schema and says which one it meant.
-- Nothing preinstalled. Connectors run as subprocesses via `npx -y` / `uvx`,
+- Remote first (if configured). Otherwise, connectors run as subprocesses via `npx -y` / `uvx`,
   downloaded on the first call to a given source and kept alive afterwards.
   A source that cannot start reports a readable error while the rest keep
   working.
@@ -67,6 +67,8 @@ Polish sources are tagged `group: pl`, EU extras `group: eu` - filter with
 
 | Tool | What it does |
 |---|---|
+| `pl_find` | Required Repertorium-first semantic discovery for new questions, retaining source document refs and links. |
+| `pl_get_by_ref` | Fetch full text using the native `source:document_id` returned by Repertorium. |
 | `pl_list_sources` | Catalog of sources (no subprocess spawned). With `source_id`: live tool schemas of one connector. |
 | `pl_search` | Search any source with normalized parameters; source-specific filters via `extra`. |
 | `pl_get_document` | Full document by identifier (judgment id, ELI, KRS number, signature...), paginated. |
@@ -74,7 +76,7 @@ Polish sources are tagged `group: pl`, EU extras `group: eu` - filter with
 | `pl_coverage` | Declare what this connector covers, when each family was captured, and - explicitly - what it does NOT cover. Every gap carries a fallback. |
 
 The typical flow an LLM follows (spelled out in the server's `instructions`):
-`pl_list_sources` → `pl_search` → `pl_get_document`, with `pl_call` for the
+`pl_find` → `pl_get_by_ref`, with `pl_list_sources` / `pl_search` / `pl_get_document` / `pl_call` for the
 specialized tools each connector brings.
 
 ## Install
