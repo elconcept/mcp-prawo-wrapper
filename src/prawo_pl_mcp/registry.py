@@ -51,7 +51,7 @@ class Source:
     runtime: str  # "npx" | "uvx"
     package: str
     search: SearchSpec | None
-    get: GetSpec
+    get: GetSpec | None
     native_tools: tuple[str, ...]
     notes: str = ""
 
@@ -59,6 +59,18 @@ class Source:
 SOURCES: dict[str, Source] = {
     s.id: s
     for s in [
+        Source(
+            id="repertorium",
+            name="Repertorium - semantic discovery across Polish and EU sources",
+            coverage="Semantic index of legal decisions and statutes; snippets and deep links.",
+            group="pl",
+            runtime="remote",
+            package="existing authenticated Repertorium MCP",
+            search=SearchSpec(tool="szukaj_repertorium", query_param="q"),
+            get=None,
+            native_tools=("szukaj_repertorium",),
+            notes="Configure PRAWO_PL_MCP_URL_REPERTORIUM. No npx/uvx spawn.",
+        ),
         Source(
             id="saos",
             name="SAOS - courts of general jurisdiction + Supreme Court + Constitutional Tribunal",
@@ -386,13 +398,14 @@ def native_params(s: Source) -> dict:
         out["pl_search"] = entry
 
     g = s.get
-    get_entry: dict = {"tool": g.tool, "document_id": g.id_param}
-    if g.page_param:
-        get_entry["page"] = g.page_param
-        get_entry["pagination"] = "native"
-    if g.required_extra:
-        get_entry["required_extra"] = list(g.required_extra)
-    out["pl_get_document"] = get_entry
+    if g is not None:
+        get_entry: dict = {"tool": g.tool, "document_id": g.id_param}
+        if g.page_param:
+            get_entry["page"] = g.page_param
+            get_entry["pagination"] = "native"
+        if g.required_extra:
+            get_entry["required_extra"] = list(g.required_extra)
+        out["pl_get_document"] = get_entry
     return out
 
 
@@ -409,7 +422,7 @@ def catalog(group: str | None = None) -> list[dict]:
             "coverage": s.coverage,
             "runtime": f"{s.runtime}:{s.package}",
             "searchable": s.search is not None,
-            "document_id": s.get.id_hint,
+            "document_id": s.get.id_hint if s.get else "semantic discovery only",
             "native_tools": list(s.native_tools),
             "native_params": native_params(s),
         }
