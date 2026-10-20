@@ -53,7 +53,7 @@ Turkish law: 16 institutions, one server. prawo-pl-mcp does the same for Poland:
 | `nsa` | Case law: administrative courts (NSA + 16 WSA) | [CBOSA](https://orzeczenia.nsa.gov.pl) | [mcp-nsa](https://github.com/matematicsolutions/mcp-nsa) | npx |
 | `isap` | Legislation: Dziennik Ustaw + Monitor Polski, 96k+ acts | [Sejm ELI API](https://api.sejm.gov.pl) | [mcp-isap](https://github.com/matematicsolutions/mcp-isap) | npx |
 | `krs` | Company register: extracts, history, board composition | [KRS API (Ministry of Justice)](https://api-krs.ms.gov.pl) | [mcp-krs](https://github.com/matematicsolutions/mcp-krs) | npx |
-| `ustawy` | Codes and statutes: current text, wording on a date, commentary to every article | git-as-law + commentary repos (grounding-prawo) | `mcp-ustawy` (remote, `PRAWO_PL_MCP_URL_USTAWY`) | http |
+| `ustawy` | 37 statutes: article wording from the consolidated text and commentary to every article | commentary repos (grounding-prawo) | `mcp-ustawy` (remote, `PRAWO_PL_MCP_URL_USTAWY`) | http |
 | `kio` | Public procurement: National Appeal Chamber rulings | [orzeczenia.uzp.gov.pl](https://orzeczenia.uzp.gov.pl) | [kio-orzeczenia-mcp](https://github.com/matematicsolutions/kio-orzeczenia-mcp) | uvx |
 | `uodo` | GDPR enforcement: Polish DPA decisions, fines, stats | [orzeczenia.uodo.gov.pl](https://orzeczenia.uodo.gov.pl) | [uodo-orzeczenia-mcp](https://github.com/matematicsolutions/uodo-orzeczenia-mcp) | uvx |
 | `eu-sparql` | EU law: EUR-Lex by CELEX, CJEU by ECLI, GDPRhub | [Cellar SPARQL](https://op.europa.eu/en/web/cellar) | [mcp-eu-sparql](https://github.com/matematicsolutions/mcp-eu-sparql) | npx |

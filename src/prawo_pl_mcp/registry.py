@@ -168,9 +168,9 @@ SOURCES: dict[str, Source] = {
         Source(
             id="ustawy",
             name="Ustawy - Polish codes and statutes with article commentary (grounding-prawo)",
-            coverage="Current consolidated text of 15 codes and the Constitution as git-as-law "
-            "(wording on a given date from amendment history) plus commentary to every article "
-            "of 32 statutes. Quote verification against the article wording.",
+            coverage="37 Polish statutes (codes, Constitution, court system, administrative procedure, "
+            "court fees, medical, consumer and tenant law and more): verbatim wording of every article "
+            "from the stated consolidated text plus commentary to every article. Quote verification.",
             group="pl",
             runtime="http",
             package="mcp-ustawy",
@@ -184,12 +184,12 @@ SOURCES: dict[str, Source] = {
                 tool="artykul",
                 id_param="art",
                 id_hint="article number, e.g. 148, 117^1, 43bb; pass the act via extra "
-                "{\"akt\": \"kk\"} (kk, kpk, kc, kpc, kro, kw, kpw, kkw, kpa, konstytucja, uozp...)",
+                "{\"akt\": \"kk\"} (kk, kpk, kc, kpc, kro, kw, kpw, kpa, ppsa, uopl, upk, konstytucja...)",
                 required_extra=("akt",),
             ),
             native_tools=("akty", "szukaj", "artykul", "cytat"),
-            notes="Wording on a date: extra {\"na_dzien\": \"YYYY-MM-DD\"}; commentary: extra "
-            "{\"komentarz\": true}. Quote check: pl_call tool=cytat. Acts list: pl_call tool=akty.",
+            notes="Commentary: extra {\"komentarz\": true}. Quote check: pl_call tool=cytat. Acts list: "
+            "pl_call tool=akty. Amendments after the stated consolidated text: check ELI (eli field).",
         ),
         Source(
             id="kio",
