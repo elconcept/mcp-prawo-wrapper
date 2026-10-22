@@ -53,7 +53,7 @@ Turkish law: 16 institutions, one server. prawo-pl-mcp does the same for Poland:
 | `nsa` | Case law: administrative courts (NSA + 16 WSA) | [CBOSA](https://orzeczenia.nsa.gov.pl) | [mcp-nsa](https://github.com/matematicsolutions/mcp-nsa) | npx |
 | `isap` | Legislation: Dziennik Ustaw + Monitor Polski, 96k+ acts | [Sejm ELI API](https://api.sejm.gov.pl) | [mcp-isap](https://github.com/matematicsolutions/mcp-isap) | npx |
 | `krs` | Company register: extracts, history, board composition | [KRS API (Ministry of Justice)](https://api-krs.ms.gov.pl) | [mcp-krs](https://github.com/matematicsolutions/mcp-krs) | npx |
-| `eureka` | Tax rulings: 550k+ individual interpretations | [EUREKA (Ministry of Finance)](https://eureka.mf.gov.pl) | [mcp-eureka](https://github.com/matematicsolutions/mcp-eureka) | npx |
+| `ustawy` | 37 statutes: article wording from the consolidated text and commentary to every article | commentary repos (grounding-prawo) | `mcp-ustawy` (remote, `PRAWO_PL_MCP_URL_USTAWY`) | http |
 | `kio` | Public procurement: National Appeal Chamber rulings | [orzeczenia.uzp.gov.pl](https://orzeczenia.uzp.gov.pl) | [kio-orzeczenia-mcp](https://github.com/matematicsolutions/kio-orzeczenia-mcp) | uvx |
 | `uodo` | GDPR enforcement: Polish DPA decisions, fines, stats | [orzeczenia.uodo.gov.pl](https://orzeczenia.uodo.gov.pl) | [uodo-orzeczenia-mcp](https://github.com/matematicsolutions/uodo-orzeczenia-mcp) | uvx |
 | `eu-sparql` | EU law: EUR-Lex by CELEX, CJEU by ECLI, GDPRhub | [Cellar SPARQL](https://op.europa.eu/en/web/cellar) | [mcp-eu-sparql](https://github.com/matematicsolutions/mcp-eu-sparql) | npx |
@@ -115,6 +115,8 @@ Open by default (public, read-only data). Set `PRAWO_PL_MCP_API_KEY` to require
 
 | Env | Default | Meaning |
 |---|---|---|
+| `PRAWO_PL_MCP_SOURCES` | - | Comma list of exposed sources, e.g. `saos,nsa,ustawy`; empty = all. |
+| `PRAWO_PL_MCP_URL_<ID>` | - | Use an already deployed MCP server (Streamable HTTP) for a source instead of spawning it, e.g. `PRAWO_PL_MCP_URL_SAOS=http://10.0.10.201:8402/mcp`. Required for `http` sources. |
 | `PRAWO_PL_MCP_CMD_<ID>` | - | Override the spawn command for a source, e.g. `PRAWO_PL_MCP_CMD_SAOS="node C:/dev/mcp-saos/dist/index.js"` for a local checkout. `<ID>` = source id, uppercase, `-` → `_`. |
 | `PRAWO_PL_MCP_INIT_TIMEOUT` | `180` | Seconds allowed for a connector's first start (includes package download). |
 | `PRAWO_PL_MCP_TIMEOUT` | `90` | Seconds per tool call after startup. |
@@ -155,3 +157,10 @@ Apache-2.0. Individual connectors carry their own licenses (MIT or Apache-2.0),
 their own rate limits and their own terms toward upstream databases - the
 aggregator adds no caching and no transformation beyond pagination, so each
 connector's constraints apply unchanged.
+
+## Deployment for grounding-prawo (NAS)
+
+`deploy/grounding-prawo/` runs one wrapper (`mcp-prawo`, Streamable HTTP `/mcp`) in front of the connectors already
+deployed as containers: `saos` (local SAOS dump), `nsa` and `ustawy` (codes and statutes with commentary from
+`elconcept/grounding-prawo`, `deploy/mcp-ustawy`). The portal `lex` then needs a single server `prawo`
+instead of `saos`, `nsa`, `cite` and `isap`.

@@ -1,7 +1,7 @@
 [project]
 name = "prawo-pl-mcp"
 version = "0.2.4"
-description = "One MCP server for Polish legal data - aggregates the matematicsolutions connector fleet (SAOS, NSA, ISAP, KRS, EUREKA, KIO, UODO + EU extras) behind 4 unified tools"
+description = "One MCP server for Polish legal data - aggregates the matematicsolutions connector fleet (SAOS, NSA, ISAP, KRS, KIO, UODO, ustawy z komentarzem + EU extras) behind 4 unified tools"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "Apache-2.0" }

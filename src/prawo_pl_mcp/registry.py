@@ -5,14 +5,15 @@ npx/uvx. Mapowania parametrow unified -> natywne odzwierciedlaja FAKTYCZNE
 schematy z kodu konektorow (ekstrakcja 2026-07-31), nie dokumentacje.
 
 Niespojnosci floty normalizowane tutaj:
-- daty: dateFrom/dateTo (saos, nsa) vs date_from/date_to (eureka, kio, uodo, eu-sparql)
-- paginacja: pageNumber od 0 (saos) / od 1 (nsa), page od 0 (eureka) / od 1 (kio, uodo)
+- daty: dateFrom/dateTo (saos, nsa) vs date_from/date_to (kio, uodo, eu-sparql)
+- paginacja: pageNumber od 0 (saos) / od 1 (nsa), page od 1 (kio, uodo)
 - rozmiar strony: pageSize / page_size / size / limit
 Unified: `page` ZAWSZE od 1, `limit` = rozmiar strony (clamp do size_max).
 """
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 
 
@@ -48,7 +49,7 @@ class Source:
     name: str
     coverage: str
     group: str  # "pl" | "eu"
-    runtime: str  # "npx" | "uvx"
+    runtime: str  # "npx" | "uvx" | "http" (zdalny serwer, adres w PRAWO_PL_MCP_URL_<ID>)
     package: str
     search: SearchSpec | None
     get: GetSpec
@@ -165,30 +166,30 @@ SOURCES: dict[str, Source] = {
             "default) | S (associations/foundations), pass via extra.",
         ),
         Source(
-            id="eureka",
-            name="EUREKA - individual tax interpretations (KIS/MF)",
-            coverage="550k+ tax rulings from the Ministry of Finance EUREKA system.",
+            id="ustawy",
+            name="Ustawy - Polish codes and statutes with article commentary (grounding-prawo)",
+            coverage="37 Polish statutes (codes, Constitution, court system, administrative procedure, "
+            "court fees, medical, consumer and tenant law and more): verbatim wording of every article "
+            "from the stated consolidated text plus commentary to every article. Quote verification.",
             group="pl",
-            runtime="npx",
-            package="@matematicsolutions/mcp-eureka",
+            runtime="http",
+            package="mcp-ustawy",
             search=SearchSpec(
-                tool="search",
-                query_param="query",
-                date_from_param="date_from",
-                date_to_param="date_to",
-                page_param="page",
-                page_base=0,
-                size_param="page_size",
+                tool="szukaj",
+                query_param="q",
+                size_param="limit",
                 size_max=50,
             ),
             get=GetSpec(
-                tool="get_interpretation",
-                id_param="id",
-                id_hint="ID_INFORMACJI from search results; for a signature use "
-                "pl_call tool=search_by_signature",
+                tool="artykul",
+                id_param="art",
+                id_hint="article number, e.g. 148, 117^1, 43bb; pass the act via extra "
+                "{\"akt\": \"kk\"} (kk, kpk, kc, kpc, kro, kw, kpw, kpa, ppsa, uopl, upk, konstytucja...)",
+                required_extra=("akt",),
             ),
-            native_tools=("search", "get_interpretation", "search_by_signature", "list_categories"),
-            notes="Category dictionary via pl_call tool=list_categories.",
+            native_tools=("akty", "szukaj", "artykul", "cytat"),
+            notes="Commentary: extra {\"komentarz\": true}. Quote check: pl_call tool=cytat. Acts list: "
+            "pl_call tool=akty. Amendments after the stated consolidated text: check ELI (eli field).",
         ),
         Source(
             id="kio",
@@ -348,6 +349,21 @@ SOURCES: dict[str, Source] = {
         ),
     ]
 }
+
+
+def _enabled_sources() -> None:
+    """PRAWO_PL_MCP_SOURCES=saos,nsa,ustawy ogranicza katalog do wdrożonych źródeł (pusta = wszystkie)."""
+    allow = [x.strip() for x in os.environ.get("PRAWO_PL_MCP_SOURCES", "").split(",") if x.strip()]
+    if allow:
+        unknown = sorted(set(allow) - set(SOURCES))
+        if unknown:
+            raise ValueError(f"PRAWO_PL_MCP_SOURCES: unknown source(s) {unknown}")
+        for sid in list(SOURCES):
+            if sid not in allow:
+                del SOURCES[sid]
+
+
+_enabled_sources()
 
 
 def get_source(source_id: str) -> Source | None:

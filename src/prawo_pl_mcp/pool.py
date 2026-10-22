@@ -2,6 +2,8 @@
 
 Drabinka provisioning (regula floty - lazy-provisioning obowiazkowy,
 zaden tool nie bleduje "konektor niezainstalowany"):
+0. env `PRAWO_PL_MCP_URL_<ID>` - zdalny serwer MCP (Streamable HTTP), np. konektor wdrozony
+   jako osobny kontener: `http://10.0.10.201:8402/mcp`; zrodla `runtime="http"` wymagaja tego adresu
 1. env override `PRAWO_PL_MCP_CMD_<ID>` (np. lokalny checkout: `python -m sejm_eli_mcp`)
 2. zywa sesja w puli (keep-alive po pierwszym uzyciu)
 3. spawn `uvx <pkg>` / `npx -y <pkg>` - manager pakietow sam pobiera przy 1. uzyciu
@@ -17,7 +19,7 @@ import shlex
 import shutil
 
 from fastmcp import Client
-from fastmcp.client.transports import StdioTransport
+from fastmcp.client.transports import StdioTransport, StreamableHttpTransport
 
 from .registry import Source
 
@@ -28,6 +30,16 @@ CALL_TIMEOUT_S = float(os.environ.get("PRAWO_PL_MCP_TIMEOUT", "90"))
 
 class SourceUnavailable(Exception):
     """Zrodlo nieosiagalne po przejsciu calej drabinki provisioning."""
+
+
+def _env_key(source: Source) -> str:
+    return source.id.upper().replace("-", "_")
+
+
+def _remote_url(source: Source) -> str | None:
+    """Adres zdalnego serwera MCP zrodla (Streamable HTTP) albo None."""
+    url = os.environ.get(f"PRAWO_PL_MCP_URL_{_env_key(source)}", "").strip()
+    return url or None
 
 
 def _spawn_spec(source: Source) -> tuple[str, list[str]]:
@@ -68,6 +80,20 @@ class SourcePool:
             client = self._clients.get(source.id)
             if client is not None and client.is_connected():
                 return client
+
+            url = _remote_url(source)
+            if url:
+                client = Client(StreamableHttpTransport(url), timeout=CALL_TIMEOUT_S)
+                try:
+                    await asyncio.wait_for(client.__aenter__(), timeout=INIT_TIMEOUT_S)
+                except Exception as exc:  # serwer zdalny niedostepny - czytelny blad
+                    raise SourceUnavailable(f"Source '{source.id}' unreachable at {url}: {exc}") from exc
+                self._clients[source.id] = client
+                return client
+            if source.runtime == "http":
+                raise SourceUnavailable(
+                    f"Source '{source.id}' is a remote server: set PRAWO_PL_MCP_URL_{_env_key(source)}"
+                )
 
             command, args = _spawn_spec(source)
             if not _runtime_present(command):

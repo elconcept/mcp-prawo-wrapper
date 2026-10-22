@@ -11,7 +11,7 @@ def test_ids_unique_and_lowercase():
 
 
 def test_runtime_valid():
-    assert all(s.runtime in ("npx", "uvx") for s in SOURCES.values())
+    assert all(s.runtime in ("npx", "uvx", "http") for s in SOURCES.values())
 
 
 def test_groups_valid():
@@ -19,7 +19,7 @@ def test_groups_valid():
 
 
 def test_core_pl_sources_present():
-    for expected in ("saos", "nsa", "isap", "krs", "eureka", "kio", "uodo"):
+    for expected in ("saos", "nsa", "isap", "krs", "kio", "uodo", "ustawy"):
         assert expected in SOURCES, f"Brak zrodla '{expected}' w registry"
 
 

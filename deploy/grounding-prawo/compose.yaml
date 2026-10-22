@@ -1,0 +1,26 @@
+# mcp-prawo - jeden serwer MCP dla orzeczeń SAOS i NSA oraz bazy ustaw (Streamable HTTP /mcp, port 8000).
+# Stack Portainera "mcp-prawo". Port na hoście 8413 (LAN: http://10.0.10.201:8413/mcp). Z internetu: tunel cloudflared
+# (sieć cf_mcp_prawo) i portal lex jako serwer "prawo" zamiast saos, nsa, cite i isap.
+# Konektory działają dalej jako osobne kontenery; wrapper łączy się z nimi po LAN (porty hosta 8402, 8405, 8412).
+services:
+  mcp-prawo:
+    build:
+      context: ../..
+      dockerfile: deploy/grounding-prawo/Dockerfile
+    image: mcp-prawo:latest
+    container_name: mcp-prawo
+    environment:
+      - TZ=Europe/Warsaw
+      - PRAWO_PL_MCP_SOURCES=saos,nsa,ustawy
+      - PRAWO_PL_MCP_URL_SAOS=http://10.0.10.201:8402/mcp
+      - PRAWO_PL_MCP_URL_NSA=http://10.0.10.201:8405/mcp
+      - PRAWO_PL_MCP_URL_USTAWY=http://10.0.10.201:8412/mcp
+    ports:
+      - "8413:8000"
+    networks:
+      - cf_mcp_prawo
+    restart: unless-stopped
+
+networks:
+  cf_mcp_prawo:
+    external: true
