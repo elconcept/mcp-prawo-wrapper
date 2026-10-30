@@ -20,6 +20,8 @@ class _CapturePool:
     def __init__(self, response: str = "ok"):
         self.calls: list[tuple[str, str, dict]] = []
         self.response = response
+        self.native_structured: dict = {}
+        self.native_is_error = False
         # tool -> input_schema; puste = konektor nie deklaruje schematu
         self.schemas: dict[str, dict] = {}
         self.list_tools_calls = 0
@@ -27,6 +29,11 @@ class _CapturePool:
     async def call(self, source, tool, arguments):
         self.calls.append((source.id, tool, arguments))
         return self.response
+
+    async def call_with_metadata(self, source, tool, arguments):
+        self.calls.append((source.id, tool, arguments))
+        return {"text": self.response, "structured": self.native_structured,
+                "is_error": self.native_is_error}
 
     async def list_tools(self, source, use_cache: bool = False):
         self.list_tools_calls += 1
@@ -101,15 +108,16 @@ async def test_unknown_source():
 
 
 async def test_get_document_paginates_and_wraps(pool):
+    """Niechunkowane źródło nadal korzysta z paginacji agregatora."""
     pool.response = "A" * 12000
-    raw = await pl_get_document("nsa", "7E50984BB7")
+    raw = await pl_get_document("krs", "0000028860")
     page = json.loads(raw)
-    assert page["source"] == "nsa"
+    assert page["source"] == "krs"
     assert page["total_pages"] == 3
     assert page["has_more"] is True
     _, tool, args = pool.calls[0]
-    assert tool == "get_judgment"
-    assert args["doc_id"] == "7E50984BB7"
+    assert tool == "get_entity"
+    assert args["krs"] == "0000028860"
 
 
 async def test_eu_compliance_get_requires_regulation(pool):
@@ -179,10 +187,63 @@ async def test_isap_page_is_forwarded_natively_and_not_recut(pool):
 
 async def test_aggregator_pagination_marks_itself(pool):
     pool.response = "B" * 12000
-    out = json.loads(await pl_get_document("nsa", "7E50984BB7", page=2))
+    out = json.loads(await pl_get_document("krs", "0000028860", page=2))
     assert out["pagination"] == "aggregator"
     assert out["total_pages"] == 3
     assert out["page"] == out["page_number"] == 2
+
+
+async def test_saos_native_pagination_keeps_full_metadata_and_citations(pool):
+    pool.response = "Fragment orzeczenia SAOS"
+    pool.native_structured = {
+        "totalLength": 12000, "returnedLength": 5000, "offset": 5000,
+        "hasMore": True, "nextOffset": 10000,
+        "citations": [{"title": "Wyrok SAOS", "url": "https://www.saos.org.pl/judgments/166511"}],
+    }
+    out = json.loads(await pl_get_document("saos", "166511", page=2))
+    assert out["pagination"] == "native"
+    assert out["total_pages"] == 3
+    assert out["has_more"] is True
+    assert out["next_offset"] == 10000
+    assert out["citations"][0]["title"] == "Wyrok SAOS"
+    assert out["content"] == "Fragment orzeczenia SAOS"
+    _, tool, args = pool.calls[0]
+    assert tool == "get_judgment"
+    assert args["offset"] == 5000 and args["limit"] == 5000
+
+
+async def test_nsa_no_native_metadata_never_claims_completeness(pool):
+    """Starszy kontener NSA może ignorować offset i limit."""
+    pool.response = "Tylko pierwsze 2000 znaków"
+    out = json.loads(await pl_get_document("nsa", "389F2C5B67", page=2))
+    assert out["pagination"] == "unverified"
+    assert out["has_more"] is None
+    assert out["total_chars"] is None
+    assert "total_pages" not in out
+    assert "kompletny" in out["warning"]
+    assert pool.calls[0][2]["offset"] == 5000
+
+
+async def test_nsa_native_pagination_when_new_backend_available(pool):
+    pool.response = "Kolejny fragment uzasadnienia"
+    pool.native_structured = {
+        "totalLength": 11000, "returnedLength": 5000, "offset": 5000,
+        "hasMore": True, "nextOffset": 10000,
+        "citations": [{"title": "Orzeczenie NSA"}],
+    }
+    out = json.loads(await pl_get_document("nsa", "389F2C5B67", page=2))
+    assert out["pagination"] == "native"
+    assert out["total_pages"] == 3
+    assert out["has_more"] is True
+    assert out["citations"][0]["title"] == "Orzeczenie NSA"
+
+
+async def test_native_upstream_is_error_not_misreported_as_empty_document(pool):
+    pool.native_is_error = True
+    pool.response = "[not_found] Brak orzeczenia"
+    with pytest.raises(PLLegalError) as e:
+        await pl_get_document("saos", "999999")
+    assert e.value.code == "upstream_error"
 
 
 # ---------- pl_call: alias `args` + walidacja pass-through ----------
