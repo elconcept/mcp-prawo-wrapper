@@ -38,12 +38,16 @@ Turkish law: 16 institutions, one server. prawo-pl-mcp does the same for Poland:
   downloaded on the first call to a given source and kept alive afterwards.
   A source that cannot start reports a readable error while the rest keep
   working.
-- Paginated documents. Full judgment and act texts are chunked at ~5000
-  characters per page (yargi-mcp's pattern), so a 200-page ruling does not
-  flood the context window. Sources that paginate server-side (`isap`) get the
-  `page` forwarded natively and are reported as `pagination: "native"` - the
-  aggregator does not re-cut an already-cut page and does not invent a
-  `total_pages` it cannot know.
+- Paginated documents. Long texts are limited to ~5000 characters per call.
+  `saos` and newer `nsa` versions already return native `offset/limit` chunks;
+  the wrapper maps its 1-based `page` to offsets and preserves
+  `totalLength`, `hasMore`, `nextOffset` and citations. It does **not** cut
+  those chunks again. Older NSA without native metadata is reported as
+  `pagination: "unverified"` and `has_more: null` — never as a verified
+  complete judgment. `isap` pages natively via `page` (without invented
+  `total_pages`); other sources use local pagination.
+  Check `has_more`/native coverage rather than assuming one response is a
+  complete legal document.
 
 ## Coverage
 
