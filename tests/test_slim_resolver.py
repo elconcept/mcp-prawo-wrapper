@@ -51,7 +51,7 @@ async def test_eli_z_oficjalnymi_metadanymi_i_stronami(monkeypatch):
         },
     })
     monkeypatch.setattr(s, "_odczyt_html", lambda url: "T" * 9900)
-    result = await s.pobierz_dokument.fn("eli:DU/2024/917", strona=1)
+    result = await s.pobierz_dokument("eli:DU/2024/917", strona=1)
     assert result["status"] == "znaleziony"
     assert result["dalszy_fragment"] is True
     assert result["kolejna_strona"] == 2
@@ -93,7 +93,7 @@ async def test_saos_przekazuje_cytowania_i_natywny_has_more(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_celex_nie_podmienia_angielskiego_snapshotu():
-    result = await s.pobierz_dokument.fn("RODO art. 33")
+    result = await s.pobierz_dokument("RODO art. 33")
     assert result["status"] == "tylko_link"
     assert "/PL/TXT/" in result["adres_urzedowy"]
     assert result["artykul"] == "33"
