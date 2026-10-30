@@ -144,6 +144,32 @@ class SourcePool:
             return json.dumps(data, ensure_ascii=False, default=str)
         return ""
 
+    async def call_with_metadata(self, source: Source, tool: str, arguments: dict) -> dict:
+        """Jedno wywołanie MCP bez utraty metadanych paginacji/cytowań.
+
+        `call()` historycznie zwraca sam tekst. Nie zmieniamy jego kontraktu:
+        tę metodę wykorzystują wyłącznie ścieżki wymagające natywnej paginacji.
+        """
+        client = await self.get_client(source)
+        result = await client.call_tool(tool, arguments)
+        texts = [t for block in (result.content or [])
+                 if (t := getattr(block, "text", None))]
+        structured = getattr(result, "structured_content", None)
+        if not isinstance(structured, dict):
+            structured = {}
+        if texts:
+            body = "\n".join(texts)
+        elif structured:
+            body = json.dumps(structured, ensure_ascii=False, default=str)
+        else:
+            data = getattr(result, "data", None)
+            body = json.dumps(data, ensure_ascii=False, default=str) if data is not None else ""
+        return {
+            "text": body,
+            "structured": structured,
+            "is_error": bool(getattr(result, "is_error", False)),
+        }
+
     async def list_tools(self, source: Source, use_cache: bool = False) -> list[dict]:
         """Zywy tools/list konektora (lazy spawn) - schematy do wgladu dla LLM.
 
