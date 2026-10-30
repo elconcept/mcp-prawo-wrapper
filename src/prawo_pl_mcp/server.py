@@ -19,7 +19,7 @@ from mcp.types import ToolAnnotations
 
 from . import __version__, audit
 from .instructions import INSTRUCTIONS
-from .pagination import paginate
+from .pagination import PAGE_SIZE, paginate
 from .pool import POOL, SourceUnavailable
 from .registry import SOURCES, Source, catalog, get_source
 from .coverage import Coverage, build_coverage
@@ -395,15 +395,59 @@ async def pl_get_document(
     if spec.page_param:
         args.setdefault(spec.page_param, page)
 
+    # SAOS i nowsze NSA stronicują WEWNĄTRZ narzędzia get_judgment przez
+    # offset/limit. Dawne cięcie samego tekstu przez paginate() brało pierwszy
+    # fragment za cały dokument i fałszywie zwracało has_more=false.
+    source_chunked = s.id in ("saos", "nsa") and spec.tool == "get_judgment"
+    if source_chunked:
+        args.setdefault("offset", (page - 1) * PAGE_SIZE)
+        args.setdefault("limit", PAGE_SIZE)
+    details: dict = {}
+
     try:
-        text = await _proxy_call(s, spec.tool, args)
+        if source_chunked:
+            details = await POOL.call_with_metadata(s, spec.tool, args)
+            text = details["text"]
+            if details.get("is_error"):
+                raise PLLegalError("upstream_error", f"{s.id}/{spec.tool}: {text}")
+        else:
+            text = await _proxy_call(s, spec.tool, args)
     except PLLegalError as exc:
         _audited("pl_get_document", s.id, args, started, {}, error=exc.code)
         raise
+    except SourceUnavailable as exc:
+        _audited("pl_get_document", s.id, args, started, {}, error="source_unavailable")
+        raise PLLegalError("source_unavailable", str(exc)) from exc
+    except Exception as exc:
+        _audited("pl_get_document", s.id, args, started, {}, error="upstream_error")
+        raise PLLegalError("upstream_error", f"{s.id}/{spec.tool}: {exc}") from exc
 
-    if spec.page_param:
-        # Zrodlo juz wybralo strone. Drugie ciecie tutaj liczyloby strony JEDNEJ
-        # strony zrodla, wiec total_pages/has_more bylyby falszem - nie zgadujemy.
+    if source_chunked:
+        native = details.get("structured") or {}
+        total = native.get("totalLength")
+        has_more = native.get("hasMore")
+        if isinstance(total, int) and isinstance(has_more, bool):
+            out = {
+                "content": text, "page": page, "page_number": page,
+                "pagination": "native", "total_chars": total,
+                "total_pages": max(1, (total + PAGE_SIZE - 1) // PAGE_SIZE),
+                "has_more": has_more,
+                "offset": native.get("offset"),
+                "returned_length": native.get("returnedLength"),
+                "next_offset": native.get("nextOffset"),
+                "citations": native.get("citations", []),
+            }
+        else:
+            # Stary backend NSA może ignorować offset/limit. Nie przedstawiaj
+            # pierwszych 2000 znaków jako pełnego orzeczenia.
+            out = {
+                "content": text, "page": page, "page_number": page,
+                "pagination": "unverified", "total_chars": None,
+                "has_more": None,
+                "warning": "Źródło nie przekazało metadanych całkowitej długości i dalszych fragmentów. Nie wolno uznać tekstu za kompletny.",
+            }
+    elif spec.page_param:
+        # Zrodlo juz wybralo strone; nie tniemy jej ponownie.
         out = {
             "content": text,
             "page": page,
@@ -419,7 +463,7 @@ async def pl_get_document(
     out["document_id"] = document_id
     _audited(
         "pl_get_document", s.id, args, started,
-        {"total_chars": out["total_chars"], "page": out["page"]},
+        {"total_chars": out.get("total_chars"), "page": out["page"]},
     )
     return json.dumps(out, ensure_ascii=False)
 
