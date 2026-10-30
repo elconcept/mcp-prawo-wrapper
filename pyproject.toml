@@ -34,6 +34,7 @@ asgi = [
 
 [project.scripts]
 prawo-pl-mcp = "prawo_pl_mcp.server:main"
+pobierz-dokument-mcp = "prawo_pl_mcp.slim_resolver:main"
 
 [project.urls]
 Homepage = "https://github.com/matematicsolutions/prawo-pl-mcp"
