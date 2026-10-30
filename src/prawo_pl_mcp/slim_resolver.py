@@ -16,7 +16,7 @@ from urllib.request import Request, urlopen
 from fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 
-from .pool import POOL, SourceUnavailable
+from .pool import POOL
 from .registry import SOURCES
 
 PAGE_CHARS = 5000
@@ -235,7 +235,6 @@ async def _orzeczenie(kind: str, value: str, strona: int) -> dict:
     }
 
 
-@mcp.tool(annotations=READ_ONLY)
 async def pobierz_dokument(
     identyfikator: str, artykul: str | None = None,
     strona: int = 1, adres_zrodlowy: str | None = None,
@@ -283,6 +282,9 @@ async def pobierz_dokument(
                 "uwaga": "ID pochodzi z indeksu Repertorium; bez oficjalnego pobrania pełnej treści nie potwierdzono tekstu."}
     return {"status": "nieobsługiwany_id", "identyfikator": identyfikator,
             "uwaga": "Nie rozpoznano jednoznacznego identyfikatora. Odszukaj document_id przez Repertorium."}
+
+
+mcp.tool(pobierz_dokument, annotations=READ_ONLY)
 
 
 def main() -> None:
