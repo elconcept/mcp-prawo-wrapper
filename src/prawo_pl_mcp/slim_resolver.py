@@ -157,7 +157,12 @@ def _odczyt_html(url: str) -> str:
 async def _eli(eli: str, strona: int) -> dict:
     pub, year, pos = eli.split("/")
     base = f"https://api.sejm.gov.pl/eli/acts/{pub}/{year}/{pos}"
-    meta = await asyncio.to_thread(_odczyt_json, base)
+    try:
+        meta = await asyncio.to_thread(_odczyt_json, base)
+    except (HTTPError, URLError, TimeoutError, ValueError) as exc:
+        return {"status": "błąd_źródła", "identyfikator": "eli:" + eli,
+                "adres_urzedowy": base, "tekst": "", "dokument_pelny": False,
+                "uwaga": f"Nie udało się pobrać metadanych ELI: {type(exc).__name__}"}
     result = {
         "identyfikator": f"eli:{eli}",
         "typ": "akt_prawny",
@@ -203,7 +208,7 @@ async def _orzeczenie(kind: str, value: str, strona: int) -> dict:
     args |= {"offset": (strona - 1) * PAGE_CHARS, "limit": PAGE_CHARS}
     try:
         response = await POOL.call_with_metadata(src, "get_judgment", args)
-    except (SourceUnavailable, TimeoutError, OSError, Exception) as exc:
+    except Exception as exc:
         return {"status": "błąd_źródła", "identyfikator": kind + ":" + value,
                 "adres_urzedowy": base, "tekst": "", "dokument_pelny": False,
                 "uwaga": f"Nie udało się pobrać orzeczenia: {type(exc).__name__}"}
@@ -242,13 +247,16 @@ async def pobierz_dokument(
     Nie używaj do wyszukiwania tematów; do tego służy REPERTORIUM.
     """
     if not isinstance(identyfikator, str) or not identyfikator.strip() or len(identyfikator) > 300:
-        return {"status": "błędny_ident yfikator".replace(" ", ""), "uwaga": "Podaj identyfikator o długości do 300 znaków."}
+        return {"status": "błędny_id", "uwaga": "Podaj identyfikator o długości do 300 znaków."}
     if type(strona) is not int or strona < 1 or strona > 10000:
         return {"status": "błędna_strona", "uwaga": "Strona musi być liczbą całkowitą od 1 do 10000."}
     kind, key, parsed_art = rozpoznaj(identyfikator)
     article = artykul or parsed_art
     if kind == "eli":
-        return await _eli(key, strona)
+        wynik = await _eli(key, strona)
+        if article:
+            wynik["uwaga_dot_artykulu"] = "Wersja wstępna zwraca strony całego aktu, a nie wyodrębniony artykuł " + str(article) + "."
+        return wynik
     if kind in ("nsa", "saos"):
         return await _orzeczenie(kind, key, strona)
 
