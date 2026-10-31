@@ -346,3 +346,27 @@ def verify_pdf_artifact(filename: str, digest: str) -> bool:
                 hmac.compare_digest(hashlib.sha256(raw).hexdigest(), digest))
     except (OSError, ValueError):
         return False
+
+
+def verify_report_artifact(digest: str, expected: dict) -> bool:
+    """Sprawdź oryginalny raport konwersji i jego powiązanie z cache.
+
+    Samo pole 'wierny_odczyt' we wpisie SQLite nie jest dowodem, gdy
+    podpisany SHA artefaktu/oryginalny raport nie istnieje już na wolumenie.
+    """
+    import re
+    if (not isinstance(expected, dict) or not isinstance(digest, str)
+            or re.fullmatch(r"[0-9a-f]{64}", digest) is None):
+        return False
+    base = Path(os.environ.get("PRAWO_WEBWRIGHT_ARTIFACTS",
+                               "/data/webwright/verified"))
+    path = base / (digest + ".json")
+    try:
+        if (not path.resolve().is_relative_to(base.resolve())
+                or not path.is_file() or path.stat().st_size > 500_000):
+            return False
+        raw = path.read_bytes()
+        return (hashlib.sha256(raw).hexdigest() == digest
+                and json.loads(raw.decode("utf-8")) == expected)
+    except (OSError, ValueError, UnicodeError, TypeError):
+        return False
