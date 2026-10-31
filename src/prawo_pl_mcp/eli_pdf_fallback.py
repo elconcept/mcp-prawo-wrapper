@@ -10,7 +10,8 @@ from datetime import date
 import re
 
 from .browser_bridge import browser_fallback
-from .local_corpus import read_cache, save_cache, load_verified_artifact, verify_pdf_artifact
+from .local_corpus import (read_cache, save_cache, load_verified_artifact,
+                           verify_pdf_artifact, verify_report_artifact)
 
 PAGE_CHARS = 5000
 
@@ -61,7 +62,17 @@ async def cached_eli_pdf_article(eli: str, article: str, page: int,
             or report.get("monotoniczna_numeracja") is not True
             or report.get("liczba_trafien_artykulu") != 1
             or report.get("na_dzien") != key.split("#day:")[1]
-            or not re.fullmatch(r"[0-9a-f]{64}", meta.get("pdf_sha256") or "")):
+            or not re.fullmatch(r"[0-9a-f]{64}", meta.get("pdf_sha256") or "")
+            or not re.fullmatch(r"[0-9a-f]{64}", meta.get("raport_sha256") or "")):
+        return None
+    # Każde trafienie w cache musi nadal mieć obydwa oryginały na wolumenie.
+    # Sama deklaracja metadanych w SQLite nie wystarcza do weryfikacji.
+    pdf_ok, report_ok = await asyncio.gather(
+        asyncio.to_thread(verify_pdf_artifact, meta["pdf_sha256"] + ".pdf",
+                          meta["pdf_sha256"]),
+        asyncio.to_thread(verify_report_artifact, meta["raport_sha256"], report),
+    )
+    if not pdf_ok or not report_ok:
         return None
     return {
         "identyfikator": "eli:" + eli,
@@ -111,7 +122,8 @@ async def fetch_eli_pdf_article(eli: str, article: str, page: int,
             or raw.get("silnik") != "legal-cite-pl/pdf_tj.py"
             or raw.get("wersja_legal_cite") != "2c4b7bf6e2af56b42b8b87a9bdbfe93d8078c988"
             or raw.get("na_dzien") != key.split("#day:")[1]
-            or not re.fullmatch(r"[0-9a-f]{64}", result.get("pdf_sha256") or "")):
+            or not re.fullmatch(r"[0-9a-f]{64}", result.get("pdf_sha256") or "")
+            or not re.fullmatch(r"[0-9a-f]{64}", result.get("raport_sha256") or "")):
         return {"status": result.get("status", "niezweryfikowany_pdf"),
                 "identyfikator": expected_id,
                 "artykul": article, "dokument_pelny": False, "artykul_kompletny": False,
@@ -126,6 +138,11 @@ async def fetch_eli_pdf_article(eli: str, article: str, page: int,
         )
         if not pdf_ok:
             raise ValueError("Brak lub zmieniony oryginalny PDF")
+        report_ok = await asyncio.to_thread(
+            verify_report_artifact, result["raport_sha256"], raw
+        )
+        if not report_ok:
+            raise ValueError("Brak lub zmieniony oryginalny raport wierności")
         text = await asyncio.to_thread(
             load_verified_artifact, result["artifact_file"], result["artifact_sha256"]
         )
@@ -140,6 +157,7 @@ async def fetch_eli_pdf_article(eli: str, article: str, page: int,
                 "fidelity_method": "legal-cite-eli2md-pdftotext",
                 "article_verified": True,
                 "pdf_sha256": result.get("pdf_sha256"),
+                "raport_sha256": result.get("raport_sha256"),
                 "na_dzien": key.split("#day:")[1],
                 "raport_wiernosci": raw,
                 "parser_sha": raw.get("wersja_legal_cite"),
