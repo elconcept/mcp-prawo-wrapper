@@ -1,4 +1,4 @@
-"""Bezpieczny import urzędowego PDF z whitelisty do lokalnego korpusu.
+"""Ostrożne pozyskanie PDF — niezależnie od kompletności ekstrakcji.
 
 Brak OCR i obchodzenia ograniczeń serwisu. PDF bez wyodrębnialnego
 tekstu lub bez potwierdzenia identyfikatora pozostaje kandydatem.
@@ -87,7 +87,7 @@ def _verified_identity(text: str, *, source: str, identity: str) -> bool:
 
 def ingest_verified_pdf(url: str, *, source: str, identity: str,
                         directory: str) -> dict:
-    """Pobierz, wyodrębnij tekst, sprawdź dokument, zapisz plik o nazwie SHA."""
+    """Pobierz i zachowaj surowy PDF oraz kandydacki ekstrakt. Bez atestu wierności."""
     blob = _get_official_pdf(url, source)
     text, pages = _pdf_text(blob)
     if not _verified_identity(text, source=source, identity=identity):
@@ -112,11 +112,14 @@ def ingest_verified_pdf(url: str, *, source: str, identity: str,
         tmp_pdf.write(blob)
         pdf_tmp = tmp_pdf.name
     os.replace(pdf_tmp, target_pdf)
-    return {"status": "zweryfikowany_tekst_zapisany",
+    return {"status": "kandydat_pdf_zapisany",
             "artifact_file": target.name,
             "artifact_pdf": target_pdf.name, "pdf_sha256": pdf_digest,
             "artifact_sha256": digest,
             "liczba_znakow": len(text), "strony_pdf": pages,
-            "adres_pdf": url, "dokument_pelny": True,
-            "uwaga": "Wyodrębniono wszystkie strony udostępnionego PDF. "
-                     "Aktualność i późniejsze nowelizacje oceniaj osobno."}
+            "adres_pdf": url, "dokument_pelny": False,
+            "wynik_wiernosci": "niezweryfikowany",
+            "zgodnosc_id": "heurystyka_wystapienia_w_tresci",
+            "uwaga": "Zapisano oryginalny PDF i kandydacki odczyt przez pypdf. "
+                     "Wystąpienie numeru w tekście nie potwierdza tożsamości, "
+                     "wierności, kompletności ani aktualności. Nie cytować jako zweryfikowany."}
