@@ -51,6 +51,12 @@ def rozpoznaj(identyfikator: str) -> tuple[str, str, str | None]:
     if m:
         pub = "MP" if raw.upper().lstrip().startswith("M") else "DU"
         return "eli", f"{pub}/{m[1]}/{int(m[2])}", None
+    m = re.fullmatch(r"(?:krs:|KRS\s+)(\d{1,10})", raw, re.I)
+    if m:
+        return "krs", m[1].zfill(10), None
+    m = re.fullmatch(r"uodo:(PublicDocument-[A-Za-z0-9_\-]{8,150})", raw, re.I)
+    if m:
+        return "uodo", m[1], None
     m = re.fullmatch(r"nsa:([A-Fa-f0-9]{10})", raw, re.I)
     if m:
         return "nsa", m[1].upper(), None
@@ -448,6 +454,52 @@ async def _orzeczenie(kind: str, value: str, strona: int) -> dict:
     }
 
 
+async def _backend_dokument(rodzaj: str, identyfikator: str, strona: int) -> dict:
+    """Natywny KRS/UODO bez pozorowania autentycznego pełnego odpisu.
+
+    Te serwery są odrębnymi backendami, a ich struktury mogą się zmieniać.
+    Na tym etapie nie zapisujemy do trusted cache: KRS jest dynamiczny,
+    a kompletny UODO wymaga niezależnego potwierdzenia źródła i uzasadnienia.
+    """
+    src = SOURCES.get(rodzaj)
+    ident = rodzaj + ":" + identyfikator
+    if src is None:
+        return {"status": "niepodłączone_źródło", "identyfikator": ident,
+                "dokument_pelny": False, "tekst": ""}
+    name, args = (
+        ("get_entity", {"krs": identyfikator, "rejestr": "P"})
+        if rodzaj == "krs" else
+        ("uodo_get_decision", {"id": identyfikator})
+    )
+    try:
+        response = await POOL.call_with_metadata(src, name, args)
+        if response.get("is_error"):
+            return {"status": "błąd_źródła", "identyfikator": ident,
+                    "dokument_pelny": False, "tekst": ""}
+        structured = response.get("structured") or {}
+        body = response.get("text") or ""
+        if isinstance(structured.get("result"), dict):
+            structured = structured["result"]
+        if not body and structured:
+            body = json.dumps(structured, ensure_ascii=False, default=str)
+        if not isinstance(body, str) or not body.strip():
+            return {"status": "pusty_wynik_źródła", "identyfikator": ident,
+                    "dokument_pelny": False, "tekst": ""}
+        part = stronicuj(body, strona)
+        return {"identyfikator": ident,
+                "typ": "odpis_KRS" if rodzaj == "krs" else "decyzja_UODO",
+                "zrodlo": "oficjalny rejestr KRS" if rodzaj == "krs" else "MCP UODO",
+                "pochodzenie": "backend_bez_zapisu_do_cache",
+                "dokument_pelny": False,
+                "kompletnosc": "niezweryfikowana",
+                "uwaga": "Pobrano wynik backendu. Nie potwierdzono niezależnie "
+                         "kompletności wszystkich pól lub uzasadnienia."} | part
+    except Exception as exc:
+        return {"status": "błąd_źródła", "identyfikator": ident,
+                "dokument_pelny": False, "tekst": "",
+                "uwaga": f"Błąd źródła: {type(exc).__name__}"}
+
+
 async def _promuj_pdf(candidate: dict, ident: str, kind: str, strona: int,
                        artykul: str | None = None) -> dict | None:
     """Promuj tylko kompletny, zgodny z identyfikatorem tekst oficjalnego PDF.
@@ -533,6 +585,8 @@ async def pobierz_dokument(
         return wynik
     if kind in ("nsa", "saos"):
         return await _orzeczenie(kind, key, strona)
+    if kind in ("krs", "uodo"):
+        return await _backend_dokument(kind, key, strona)
 
     if kind == "celex":
         uri = "https://eur-lex.europa.eu/legal-content/PL/TXT/?uri=CELEX:" + key
