@@ -11,7 +11,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     poppler-utils git && rm -rf /var/lib/apt/lists/*
 RUN python -m pip install --no-cache-dir ".[asgi]" \
     "playwright==1.56.0" "pypdf>=5,<7" "httpx>=0.27,<0.29" \
-    "eli2md @ git+https://github.com/PolskiAgentW/eli2md@9cb6a7c179a1cb4b86fe502a565784cd1132fc78"
+    "eli2md @ git+https://github.com/PolskiAgentW/eli2md@4fc3ce71c94cb7a7da71e85259c50fad519af3ea"
 RUN python -m pip install --no-cache-dir --no-deps \
     "git+https://github.com/apiotrowski-afk/legal-cite-pl@2c4b7bf6e2af56b42b8b87a9bdbfe93d8078c988"
 RUN python -c "import eli2md.pdf, eli2md.tree; from legal_cite import pdf_tj; assert pdf_tj.wersja_pdftotext()"
