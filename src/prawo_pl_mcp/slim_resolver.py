@@ -157,6 +157,54 @@ def _odczyt_html(url: str) -> str:
     return parser.text()
 
 
+async def _ustawy_mcp_eli(eli: str, strona: int, artykul: str | None) -> dict | None:
+    """Wewnętrzny endpoint dla całego lokalnego zakresu USTAWY po ELI.
+
+    Zaprojektowany do użytku po wdrożeniu osobnego PR USTAWY; przed tym
+    wdrożeniem bezpiecznie zwraca None i zachowuje stary przepływ.
+    """
+    src = SOURCES.get("ustawy")
+    if not src:
+        return None
+    args = {"eli": eli, "offset": (strona - 1) * PAGE_CHARS, "limit": PAGE_CHARS}
+    if artykul:
+        args["art"] = artykul
+    try:
+        response = await POOL.call_with_metadata(src, "akt_po_eli", args)
+        if response.get("is_error"):
+            return None
+        data = (response.get("structured") or {}).get("result")
+        if not isinstance(data, dict):
+            data = response.get("structured") or {}
+        if "status" not in data:
+            try:
+                data = json.loads(response.get("text") or "{}")
+            except (ValueError, TypeError):
+                return None
+        if not isinstance(data, dict) or data.get("status") != "FOUND":
+            return None
+        if not data.get("tekst") or not isinstance(data.get("hasMore"), bool):
+            return None
+        return {
+            "status": "znaleziony",
+            "identyfikator": "eli:" + eli,
+            "typ": "akt_prawny",
+            "tytul": data.get("tytul"),
+            "zrodlo": data.get("zrodlo"),
+            "adres_urzedowy": "https://api.sejm.gov.pl/eli/acts/" + eli,
+            "pochodzenie": "lokalny_mcp_ustawy",
+            "tekst": data["tekst"], "artykul": artykul, "strona": strona,
+            "total_chars": data.get("totalLength"),
+            "dalszy_fragment": data["hasMore"],
+            "kolejna_strona": strona + 1 if data["hasMore"] else None,
+            "next_offset": data.get("nextOffset"),
+            "dokument_pelny": False,
+            "uwaga": data.get("uwaga", "Lokalne USTAWY nie obejmują całego oryginału Dz.U."),
+        }
+    except Exception:
+        return None
+
+
 async def _ustawy_mcp_artykul(eli: str, numer: str) -> dict | None:
     """Awaryjnie korzysta z lokalnego istniejącego MCP USTAWY, bez internetu.
 
@@ -212,6 +260,10 @@ async def _eli(eli: str, strona: int, artykul: str | None = None) -> dict:
             "dokument_pelny": False, "pochodzenie": "lokalny_ustawy",
             "uwaga": local["uwaga"] + " Stan prawny sprawdź względem daty aktu.",
         }
+    via_mcp_eli = await _ustawy_mcp_eli(eli, strona, artykul)
+    if via_mcp_eli:
+        return via_mcp_eli
+
     if artykul:
         via_mcp = await _ustawy_mcp_artykul(eli, artykul)
         if via_mcp:
