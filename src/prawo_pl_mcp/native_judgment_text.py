@@ -28,7 +28,8 @@ def _valid_meta(meta: dict[str, Any], offset: int, limit: int) -> bool:
             or meta.get("offset") != offset
             or type(more) is not bool
             or more != (offset + returned < total)
-            or next_offset != offset + returned):
+            or (next_offset != offset + returned if more
+                else next_offset not in (None, offset + returned))):
         return False
     return True
 
