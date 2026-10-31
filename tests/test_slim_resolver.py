@@ -249,3 +249,29 @@ async def test_uodo_metadata_missing_is_not_complete_document(monkeypatch):
     r = await s.pobierz_dokument("uodo:PublicDocument-20260407-000000-000-abc123")
     assert r["status"] == "pusty_wynik_źródła"
     assert r["dokument_pelny"] is False
+
+
+@pytest.mark.asyncio
+async def test_eli_historical_date_never_returns_current_pdf_or_html(monkeypatch):
+    """Historyczna data wymaga udokumentowanej wersji, nie samego PDF/textHTML."""
+    monkeypatch.setattr(s, "read_ustawy", lambda *args: (_ for _ in ()).throw(
+        AssertionError("Nie czytaj niezależnie od daty z USTAWY")
+    ))
+    async def forbidden(*args, **kwargs):
+        raise AssertionError("Nie pobieraj bieżącego PDF przy na_dzien")
+    monkeypatch.setattr(s, "fetch_eli_pdf_article", forbidden)
+    monkeypatch.setattr(s, "cached_eli_pdf_article", forbidden)
+    monkeypatch.setattr(s, "_odczyt_html", lambda *args: (_ for _ in ()).throw(
+        AssertionError("Nie zwracaj bieżącego HTML jako historycznego")
+    ))
+    monkeypatch.setattr(s, "_odczyt_json", lambda url: {
+        "title": "Ustawa", "textHTML": False, "status": "obowiązujący",
+        "promulgation": "2024-06-21"
+    })
+    r = await s.pobierz_dokument("eli:DU/2024/917", artykul="23",
+                                 na_dzien="2025-05-01")
+    assert r["status"] == "brak_zweryfikowanego_brzmienia_na_dzien"
+    assert r["żądana_data"] == "2025-05-01"
+    assert r["tekst"] == ""
+    assert r["dokument_pelny"] is False
+    assert r["artykul_kompletny"] is False
