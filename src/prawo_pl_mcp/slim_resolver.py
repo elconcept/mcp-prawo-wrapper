@@ -367,9 +367,38 @@ async def pobierz_dokument(
                 "uwaga": "Brak zweryfikowanej pełnej treści w polskim korpusie. "
                          "Wynik z przeglądarki jest kandydatem, nie tekstem autentycznym."}
     if kind == "ecli":
-        return {"status": "tylko_link", "identyfikator": "ecli:" + key,
-                "adres_urzedowy": "https://eur-lex.europa.eu/legal-content/PL/TXT/?uri=ECLI:" + key,
-                "dokument_pelny": False, "tekst": ""}
+        ident = "ecli:" + key
+        url = "https://eur-lex.europa.eu/legal-content/PL/TXT/?uri=ECLI:" + key
+        # Weryfikowany lokalny korpus orzeczeń TSUE ma bezwzględny priorytet.
+        cached = await asyncio.to_thread(read_cache, ident)
+        if cached and cached["kompletny"] and cached["metadane"].get("wersja_urzedowa_pl") is True:
+            part = stronicuj(cached["tekst"], strona)
+            return {"status": "znaleziony", "identyfikator": ident,
+                    "typ": "orzeczenie_TSUE", "pochodzenie": "lokalny_cache",
+                    "adres_urzedowy": cached["adres_zrodlowy"],
+                    "sha256": cached["sha256"], "dokument_pelny": True} | part
+        # Fallback wyłącznie do identyfikacji dokumentu: live EUR-Lex/Cellar.
+        candidate = {"status": "tylko_link"}
+        source = SOURCES.get("eu-sparql")
+        if source:
+            try:
+                response = await POOL.call_with_metadata(
+                    source, "search_cjeu_by_ecli", {"ecli": "ECLI:" + key}
+                )
+                if not response.get("is_error"):
+                    candidate = {"status": "kandydat_zapisany",
+                                 "zrodlo": "Cellar EU-SPARQL",
+                                 "wynik_tekstowy": response.get("text", "")[:3000],
+                                 "cytowania": (response.get("structured") or {}).get("citations", [])}
+                    await asyncio.to_thread(record_candidate, ident, candidate)
+            except Exception:
+                pass
+        return {"status": candidate["status"], "identyfikator": ident,
+                "typ": "orzeczenie_TSUE", "adres_urzedowy": url,
+                "dokument_pelny": False, "tekst": "",
+                "pochodzenie": "fallback_metadanych" if candidate["status"] == "kandydat_zapisany" else "brak_w_korpusie_PL",
+                "metadane_pobrania": candidate,
+                "uwaga": "Nie pobrano urzędowego polskiego pełnego tekstu; metadane wyszukiwania to nie orzeczenie."}
     if kind in ("sn", "ms", "eureka", "edpb"):
         official = {
             "sn": "https://www.sn.pl/pl/wyszukiwarka-orzeczen",
