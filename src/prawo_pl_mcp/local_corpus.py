@@ -6,6 +6,7 @@ resolvera, po sprawdzeniu tożsamości i kompletności.
 """
 from __future__ import annotations
 
+from contextlib import contextmanager
 from datetime import datetime, timezone
 import hashlib
 import json
@@ -26,7 +27,8 @@ def _utc() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
-def _connection(path: str, *, read_only: bool = False) -> sqlite3.Connection:
+@contextmanager
+def _connection(path: str, *, read_only: bool = False):
     if read_only:
         uri = Path(path).resolve().as_uri() + "?mode=ro"
         conn = sqlite3.connect(uri, uri=True, timeout=10)
@@ -34,7 +36,12 @@ def _connection(path: str, *, read_only: bool = False) -> sqlite3.Connection:
         Path(path).parent.mkdir(parents=True, exist_ok=True)
         conn = sqlite3.connect(path, timeout=10)
     conn.row_factory = sqlite3.Row
-    return conn
+    try:
+        yield conn
+        if not read_only:
+            conn.commit()
+    finally:
+        conn.close()
 
 
 def _init(conn: sqlite3.Connection) -> None:
