@@ -11,8 +11,12 @@ from typing import Any
 
 # Format surowego tools/call SAOS 1.5.0 potwierdzony 2026-10-31.
 # Wersje z poprawionym structuredContent.text nie wymagają tej ekstrakcji.
-_RANGE = re.compile(
+_RANGE_SAOS = re.compile(
     r"(?m)^--- Tresc \(znaki ([0-9]+)-([0-9]+) z ([0-9]+) lacznie\) ---\r?\n"
+)
+# PR NSA #2, formatJudgment: dokładny układ Unicode/odstępów.
+_RANGE_NSA = re.compile(
+    r"(?m)^--- Treść orzeczenia \(znaki ([0-9]+)–([0-9]+) z ([0-9]+)\) ---\r?\n"
 )
 
 
@@ -57,7 +61,7 @@ def extract_native_judgment_text(
     if len(body) == expected:
         return body
 
-    match = _RANGE.search(body)
+    match = (_RANGE_SAOS if kind == "saos" else _RANGE_NSA).search(body)
     if match is None:
         return None
     start, end, total = (int(v) for v in match.groups())
@@ -75,7 +79,7 @@ def extract_native_judgment_text(
             return None
     else:
         if (not re.fullmatch(r"[0-9A-Fa-f]{10}", source_id) or
-                not re.search(r"(?m)^Doc ID\s*:\s*" +
+                not re.search(r"(?m)^ID CBOSA\s*:\s*" +
                               re.escape(source_id) + r"\s*$", heading, re.I)):
             return None
         if not heading.startswith("=== ORZECZENIE CBOSA"):
@@ -87,16 +91,28 @@ def extract_native_judgment_text(
         return None
     text = body[from_pos:to_pos]
     suffix = body[to_pos:]
-    if suffix:
-        expected_suffix = (
-            r"\r?\n\[\.\.\.\] Skrocono\. Nastepny fragment: "
-            r"get_judgment\(id=" + re.escape(source_id) +
-            r", offset=" + str(offset + expected) +
-            r", limit=\d+\)\. Pelna tresc: https://www\.saos\.org\.pl/judgments/" +
-            re.escape(source_id)
-        )
-        # NSA ma osobny format; akceptujemy tylko dokładnie rozpoznany
-        # schemat (a nie dowolne dalsze znaki lub dołączone instrukcje).
-        if kind != "saos" or re.fullmatch(expected_suffix, suffix) is None:
+    if kind == "saos":
+        if suffix:
+            expected_suffix = (
+                r"\r?\n\[\.\.\.\] Skrocono\. Nastepny fragment: "
+                r"get_judgment\(id=" + re.escape(source_id) +
+                r", offset=" + str(offset + expected) +
+                r", limit=\d+\)\. Pelna tresc: https://www\.saos\.org\.pl/judgments/" +
+                re.escape(source_id)
+            )
+            if re.fullmatch(expected_suffix, suffix) is None:
+                return None
+    else:
+        # NSA #2 dodaje wyłącznie jedną stopkę na nieostatnim zakresie.
+        # Nie przyjmuj jej po ostatnim fragmencie ani niespodziewanych danych.
+        if meta["hasMore"]:
+            expected_suffix = (
+                r'\r?\nDalsza treść: get_judgment\(doc_id="' +
+                re.escape(source_id) + r'", offset=' +
+                str(offset + expected) + r', limit=\d+\)\.'
+            )
+            if re.fullmatch(expected_suffix, suffix) is None:
+                return None
+        elif suffix:
             return None
     return text
