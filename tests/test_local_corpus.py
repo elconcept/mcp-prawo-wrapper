@@ -96,3 +96,44 @@ def test_eu_pl_is_never_read_from_english_corpus(tmp_path, monkeypatch):
                         url="https://eur-lex.europa.eu/legal-content/PL/TXT/",
                         metadane={"źródło": "EUR-Lex", "wersja_urzedowa_pl": True}, path=path)
     assert l.read_eu_pl("32016R0679")["tekst"] == text
+
+
+def test_eu_article_requires_separately_verified_unit(tmp_path, monkeypatch):
+    db = str(tmp_path / "eu.sqlite")
+    monkeypatch.setenv(l.EU_PL_DB_ENV, db)
+    body = "Rozporządzenie UE z całą treścią aktów. " * 30
+    ident = "celex:32016R0679:pl"
+    url = "https://eur-lex.europa.eu/legal-content/PL/TXT/"
+    assert l.save_cache(ident, jezyk="pl", tekst=body, url=url,
+                        metadane={"źródło": "EUR-Lex", "wersja_urzedowa_pl": True},
+                        path=db)
+    assert l.read_eu_pl("32016R0679")["tekst"] == body
+    # Nie podstawiaj pierwszej strony rozporządzenia pod żądany art. 33.
+    assert l.read_eu_pl("32016R0679", "33") is None
+    article = "Artykuł 33. Zgłaszanie naruszenia ochrony danych osobowych. " * 5
+    assert l.save_cache(ident + "#art:33", jezyk="pl", tekst=article,
+                        url=url,
+                        metadane={
+                            "źródło": "CELLAR", "wersja_urzedowa_pl": True,
+                            "artykul": "33", "article_extraction_verified": True,
+                            "source_document_sha256": hashlib.sha256(body.encode()).hexdigest(),
+                        }, path=db)
+    row = l.read_eu_pl("32016R0679", "33")
+    assert row["tekst"] == article and row["artykul_kompletny"] is True
+    assert row["dokument_pelny"] is False
+    assert l.read_eu_pl("32016R0679", "34") is None
+
+
+def test_pdf_artifact_requires_original_sha_and_isolated_path(tmp_path, monkeypatch):
+    folder = tmp_path / "verified"
+    folder.mkdir()
+    monkeypatch.setenv("PRAWO_WEBWRIGHT_ARTIFACTS", str(folder))
+    raw = b"%PDF-1.7\n" + b"integrity data" * 40
+    digest = hashlib.sha256(raw).hexdigest()
+    file = folder / (digest + ".pdf")
+    file.write_bytes(raw)
+    assert l.verify_pdf_artifact(file.name, digest)
+    assert not l.verify_pdf_artifact("../" + file.name, digest)
+    assert not l.verify_pdf_artifact(file.name, "0" * 64)
+    file.write_bytes(raw + b"tamper")
+    assert not l.verify_pdf_artifact(file.name, digest)
