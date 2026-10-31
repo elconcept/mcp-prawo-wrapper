@@ -28,7 +28,7 @@ Dla MS, SN i TK Webwright jest **wewnętrznym MCP** wywoływanym wyłącznie na 
 ### A. `elconcept/mcp-prawo-wrapper`
 
 **Draft PR #4:** https://github.com/elconcept/mcp-prawo-wrapper/pull/4  
-Gałąź `feat/minimalny-resolver-repertorium-20261031`, ostatni zweryfikowany HEAD **`5fb202b79796b60876c12ef967559a27bbfada5d`**. Bazuje na gałęzi `fix/upstream-native-pagination-20261031`, której draft PR **#3** (HEAD `382d0aeb5a13be3f4bb5398c8f04c3d3a5a8273f`) naprawia utratę `structuredContent` i natywną paginację SAOS/NSA. Dlatego diff PR #4 względem `main` wymaga uwzględnienia PR #3.
+Gałąź `feat/minimalny-resolver-repertorium-20261031`, ostatni zweryfikowany HEAD kodu przed dodaniem snapshotu: `5fb202b79796b60876c12ef967559a27bbfada5d`; snapshot został zapisany w commicie `a0bdcc71bf71947c583f1d574b51882132872129`, więc bieżący HEAD gałęzi jest późniejszy. Bazuje na gałęzi `fix/upstream-native-pagination-20261031`, której draft PR **#3** (HEAD `382d0aeb5a13be3f4bb5398c8f04c3d3a5a8273f`) naprawia utratę `structuredContent` i natywną paginację SAOS/NSA. Dlatego diff PR #4 względem `main` wymaga uwzględnienia PR #3.
 
 - `src/prawo_pl_mcp/slim_resolver.py`: osobna instancja FastMCP z **1** publicznym `pobierz_dokument`; parse ID ELI/SAOS/NSA/CELEX/RODO/ECLI/SN/EDPB/MS/EUREKA, lokalne źródła i fallback.
 - `src/prawo_pl_mcp/local_corpus.py`: SQLite read-only USTAWY, cache `documents`, `fragments`, `candidates`, walidacja SHA, opcjonalny `PRAWO_EU_PL_SQLITE`. Cache w **osobnej** bazie, bez bezpośredniego nadpisywania USTAWY lub SAOS.
