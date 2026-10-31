@@ -1,38 +1,46 @@
-# Minimalny portal prawny — dwa narzędzia
+# Minimalny portal prawny: REPERTORIUM + resolver LOCAL-FIRST
 
-Połącz w portalu `lex` **dwa osobne serwery MCP** (nie dwa serwery z 40 narzędziami):
+Docelowo model widzi **tylko dwa narzędzia**:
+- istniejący `szukaj_repertorium`, pozostawiony bez zmian;
+- nowy `pobierz_dokument(identyfikator, artykul?, strona?, sygnatura?, adres_zrodlowy?)`.
 
-1. Istniejący **REPERTORIUM** (bez zmian): `szukaj_repertorium(q, jurysdykcja)`.
-2. Nowy **resolver dokumentów**: tylko `pobierz_dokument(identyfikator, artykul?, strona?, adres_zrodlowy?)`.
+Pozostałe MCP (USTAWY, SAOS, NSA, EU-SPARQL, Webwright) nadal działają jako prywatne źródła wewnętrzne. Nie wystawiać narzędzi Webwright bezpośrednio w portalu lex.
 
-Nie rejestruj w tym portalu pozostałych źródeł (SAOS, NSA, KRS, BASIC-MEMORY itd.) jako narzędzi bezpośrednio dostępnych modelowi. Ich kontenery mogą pozostać jako wewnętrzne backendy lub w portalu `ai`.
+## Najpierw lokalnie
 
-## Uruchomienie testowe bez zmian REPERTORIUM
+| Rodzaj | Lokalna ścieżka | Fallback i zapis |
+|---|---|---|
+| `eli:DU/2024/917` | istniejące USTAWY SQLite lub wewnętrzne `akt_po_eli` ([PR #81 grounding-prawo](https://github.com/elconcept/grounding-prawo/pull/81)) | dopiero brak lokalny → ELI API; kompletna reprezentacja HTML zapisywana do osobnego SQLite z SHA-256 |
+| `saos:166511` | cache fragmentów → SAOS MCP z własnym mirrorem | źródłowe API SAOS obsługiwane w istniejącym serwerze; fragmenty z metadanymi zapisywane w resolverze |
+| `nsa:389F2C5B67` | cache fragmentów → NSA MCP | wywołanie CBOSA przez NSA, zapis tylko zweryfikowanych fragmentów |
+| `celex:32016R0679:pl` / `RODO art. 33` | lokalny urzędowy korpus PL → lokalny cache PL | wewnętrzny MCP Webwright z Playwright pobiera kandydata; dopóki tekst nie przejdzie walidacji urzędowego PDF/XML, NIE jest uznawany za pełen tekst |
+| `ecli:EU:C:2020:559` | lokalny cache urzędowego orzeczenia PL | EU-SPARQL jako fallback metadanych; zapis do `candidates`, nie do pełnego korpusu |
+| `sn:...` z `sygnatura` | lokalny cache artefaktów | wewnętrzny Webwright SN; **pełny PDF nie jest jeszcze automatycznie odczytywany**, więc status tylko kandydat |
+| MS / TK | dopiero po dodaniu adapterów | obecny ZIP autora nie zawiera skryptów MS/TK; żadnego udawania obsługi |
 
-Wymagane: Python >=3.11, zależności repo i dostępność SAOS/NSA przez istniejący mechanizm `PRAWO_PL_MCP_URL_...`.
+**Ważne:** bazą USTAWY jest 37 indeksowanych aktów, a nie pełne archiwum Dziennika Ustaw. USTAWY trzymają teksty artykułów; komplet załączników/nowelizacji wymaga odrębnej kontroli. Istniejący angielski EU-COMPLIANCE nie zastępuje polskich tekstów CELEX.
 
-- Stdio: `pobierz-dokument-mcp` (po instalacji `pip install -e .`).
-- HTTP: `uvicorn prawo_pl_mcp.slim_asgi:app --host 0.0.0.0 --port 8000`.
-- Test offline: `pytest -q tests/test_slim_resolver.py tests/test_pool_metadata.py`.
+## Staging — bez ingerencji w produkcję
 
-Do testów integracyjnych:
+Nowe pliki:
+- `src/prawo_pl_mcp/slim_resolver.py` — jedno publiczne narzędzie.
+- `src/prawo_pl_mcp/local_corpus.py` — read-only lokalna baza USTAWY i trwały SQLite resolvera, SHA-256.
+- `src/prawo_pl_mcp/webwright_internal.py` — dwa wewnętrzne narzędzia Playwright, nieudostępniane modelowi.
+- `vendor/webwright_legal_pl` — oryginalne skrypty autora z Apache-2.0.
+- `deploy/minimal-legal/compose.staging.yaml` — **dwa kontenery**, resolver i Webwright, osobna sieć, trwały cache.
+
 ```bash
-PRAWO_PL_MCP_SOURCES=saos,nsa,ustawy
-PRAWO_PL_MCP_URL_SAOS=http://10.0.10.201:8402/mcp
-PRAWO_PL_MCP_URL_NSA=http://10.0.10.201:8405/mcp
+# Tylko staging, po przygotowaniu konfiguracji sieci:
+docker compose -f deploy/minimal-legal/compose.staging.yaml build
+docker compose -f deploy/minimal-legal/compose.staging.yaml up -d
 ```
-Są to **przykłady ustawień testowych dla znanej sieci NAS**, nie nowa konfiguracja produkcyjna. Zachowaj istniejący Cloudflare Access. W modelu wystaw wyłącznie jeden resolver z tego serwera.
 
-## Status obsługi
+Resolver: `127.0.0.1:8414/mcp` na hoście NAS **tylko w staging**. Webwright nie ma mapowania portów hosta. Przed wdrożeniem konieczne: testy dostępu do istniejących upstreamów po LAN, poprawności przeglądarek, rozdzielenia uprawnień i aktualizacji cache. Nie uruchamiać tych komend jako elementu niekontrolowanego auto-deploy.
 
-- `eli:DU/2024/917` i `Dz.U. 2024 poz. 917`: pobranie metadanych Sejmu i tekstu HTML, stronicowanie; jawna data stanu prawnego oraz nowelizacje wymienione w metadanych.
-- `nsa:389F2C5B67`, `saos:166511`: delegowanie do źródłowego `get_judgment` z `offset/limit`; w wynikach zachowuje `totalLength`, `hasMore`, `nextOffset`, cytowania. Stary NSA bez metadanych → **niezweryfikowana kompletność**, nie fałszywe `has_more=false`.
-- `celex:32016R0679:pl` i `RODO art. 33`: obecnie oficjalny link PL, **jeszcze bez pełnego tekstu** — pozyskanie urzędowego polskiego CELEX pozostaje P0.
-- `sn:...`, `edpb:...:pl`, `ms:...`, `eureka:...`, `ecli:...`: bezpieczny link źródłowy i jawne `tylko_link`; pełny odczyt wymaga odrębnej weryfikacji adaptera.
-- Nieobsługiwany format → `nieobsługiwany_id`; bez automatycznego zgadywania lub zapytania do wszystkich baz.
+Zmienna `PRAWO_RESOLVER_CACHE=/data/prawo-resolver.sqlite` trwała przez restarty. `PRAWO_EU_PL_SQLITE=/data/eu-pl.sqlite` jest opcjonalnym zbiorem **uprzednio zweryfikowanych** polskich dokumentów. USTAWY są pobierane przez istniejący MCP po wdrożeniu PR #81, bez potrzeby eksportowania SQLite; opcjonalnie `PRAWO_USTAWY_SQLITE=/ścieżka/tylko-do-odczytu` pozwala na lokalny mount.
 
-**Nie wdrażać jako kompletnego serwisu przed testami z żywymi backendami i potwierdzeniem jakości pełnych tekstów.** Testy parsera/stronicowania nie zastępują integracji.
+## Stan weryfikacji
 
-## Ograniczenia
+Przeszły testy kodu SQLite na danych tymczasowych oraz odczytu ELI. Nie przeprowadzono pełnego pytest, build/staging browser ani końcowego testu przez Cloudflare. Nie zmieniono konfiguracji portalu lex, żadnego z uruchomionych kontenerów ani REPERTORIUM.
 
-Resolver wykorzystuje istniejący `mcp-prawo-wrapper` jako bibliotekę pomocniczą, lecz ma własny obiekt `FastMCP` i własne `tools/list` liczące **jedno narzędzie**. Nie wymaga migracji bazy ani modyfikacji REPERTORIUM. Nie tworzyć dedykowanych polityk per źródło — autoryzacja pozostaje w portalu.
+Szczegółowe wyniki i ryzyka: `_PLAN/20261031_repertorium_plus_pobierz_dokument.md`.
