@@ -6,6 +6,7 @@ Dane prawnicze: źródła urzędowe, jawny status niekompletności, odpowiedzi p
 from __future__ import annotations
 
 import asyncio
+from datetime import date
 import json
 import re
 from html.parser import HTMLParser
@@ -247,12 +248,17 @@ async def _ustawy_mcp_artykul(eli: str, numer: str) -> dict | None:
         return None
 
 
-async def _eli(eli: str, strona: int, artykul: str | None = None) -> dict:
+async def _eli(eli: str, strona: int, artykul: str | None = None,
+               na_dzien: str | None = None) -> dict:
     pub, year, pos = eli.split("/")
     base = f"https://api.sejm.gov.pl/eli/acts/{pub}/{year}/{pos}"
     # PIERWSZEŃSTWO 1: USTAWY, lokalny SQLite z artykułami i ELI.
     try:
-        local = await asyncio.to_thread(read_ustawy, eli, artykul)
+        # Lokalna baza zawiera brzmienia z konkretnego stanu, a nie wszystkie
+        # wersje historyczne. Przy jawnej dacie przechodzimy do klucza
+        # wersjonowanego, aby nie podać aktualnego przepisu jako historycznego.
+        local = (await asyncio.to_thread(read_ustawy, eli, artykul)
+                 if na_dzien is None else None)
     except Exception as exc:
         local = None  # awaria indeksu nie blokuje oddzielnego, zweryfikowanego cache
     if local:
@@ -261,11 +267,12 @@ async def _eli(eli: str, strona: int, artykul: str | None = None) -> dict:
             "dokument_pelny": False, "pochodzenie": "lokalny_ustawy",
             "uwaga": local["uwaga"] + " Stan prawny sprawdź względem daty aktu.",
         }
-    via_mcp_eli = await _ustawy_mcp_eli(eli, strona, artykul)
+    via_mcp_eli = (await _ustawy_mcp_eli(eli, strona, artykul)
+                   if na_dzien is None else None)
     if via_mcp_eli:
         return via_mcp_eli
 
-    if artykul:
+    if artykul and na_dzien is None:
         via_mcp = await _ustawy_mcp_artykul(eli, artykul)
         if via_mcp:
             part = stronicuj(via_mcp["tekst"], strona)
@@ -276,13 +283,14 @@ async def _eli(eli: str, strona: int, artykul: str | None = None) -> dict:
             }
 
     if artykul:
-        pdf_cache = await cached_eli_pdf_article(eli, artykul, strona)
+        pdf_cache = await cached_eli_pdf_article(eli, artykul, strona, na_dzien)
         if pdf_cache:
             return pdf_cache
 
     # PIERWSZEŃSTWO 2: cache urzędowych, już raz pobranych aktów.
     try:
-        cached = await asyncio.to_thread(read_cache, "eli:" + eli)
+        cached = (await asyncio.to_thread(read_cache, "eli:" + eli)
+                  if na_dzien is None else None)
     except Exception:
         cached = None
     if cached and cached["kompletny"]:
@@ -316,9 +324,9 @@ async def _eli(eli: str, strona: int, artykul: str | None = None) -> dict:
         "strona": strona,
         "uwaga": "Publikowany tekst nie musi odzwierciedlać wszystkich późniejszych nowelizacji.",
     }
-    if not meta.get("textHTML"):
+    if na_dzien is not None or not meta.get("textHTML"):
         if artykul:
-            return result | await fetch_eli_pdf_article(eli, artykul, strona)
+            return result | await fetch_eli_pdf_article(eli, artykul, strona, na_dzien)
         return result | {
             "status": "tylko_link",
             "adres_pdf": base + "/text.pdf", "tekst": "",
@@ -473,7 +481,7 @@ async def _promuj_pdf(candidate: dict, ident: str, kind: str, strona: int,
 async def pobierz_dokument(
     identyfikator: str, artykul: str | None = None,
     strona: int = 1, adres_zrodlowy: str | None = None,
-    sygnatura: str | None = None,
+    sygnatura: str | None = None, na_dzien: str | None = None,
 ) -> dict:
     """Pobierz dokument po ID z REPERTORIUM: eli:DU/2024/917, saos:166511,
     nsa:389F2C5B67, celex:32016R0679:pl, RODO art. 33.
@@ -485,12 +493,25 @@ async def pobierz_dokument(
         return {"status": "błędny_id", "uwaga": "Podaj identyfikator o długości do 300 znaków."}
     if type(strona) is not int or strona < 1 or strona > 10000:
         return {"status": "błędna_strona", "uwaga": "Strona musi być liczbą całkowitą od 1 do 10000."}
+    if na_dzien is not None:
+        try:
+            if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", na_dzien):
+                raise ValueError("Nieprawidłowy zapis")
+            date.fromisoformat(na_dzien)
+        except (TypeError, ValueError):
+            return {"status": "błędna_data",
+                    "uwaga": "Oczekiwany format na_dzien: RRRR-MM-DD."}
     kind, key, parsed_art = rozpoznaj(identyfikator)
     article = artykul or parsed_art
     if kind == "eli":
-        wynik = await _eli(key, strona, article)
-        if article and wynik.get("pochodzenie") != "lokalny_ustawy":
-            wynik["uwaga_dot_artykulu"] = "Wersja zdalna/cache stronicuje cały akt; nie wyodrębnia art. " + str(article) + "."
+        wynik = await _eli(key, strona, article, na_dzien)
+        if article and not wynik.get("artykul_kompletny") and wynik.get("pochodzenie") in (
+            "zdalny_fallback", "lokalny_cache"
+        ):
+            wynik["uwaga_dot_artykulu"] = (
+                "Ten odczyt stronicuje tekst publikacji, bez wyodrębnienia art. "
+                + str(article) + "."
+            )
         return wynik
     if kind in ("nsa", "saos"):
         return await _orzeczenie(kind, key, strona)
