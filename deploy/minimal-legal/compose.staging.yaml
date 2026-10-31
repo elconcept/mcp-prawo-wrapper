@@ -1,6 +1,7 @@
 # STAGING ONLY. Nie podłączać do lex ani nie zastępować Repertorium przed E2E.
-# Zanim uruchomisz: umieść kopię bieżącego ustawy.sqlite w pliku hosta,
-# ustaw PRAWO_USTAWY_SQLITE_HOST (wymagane); aktualizuj ją po reindeksacji USTAWY.
+# Nie wymaga kopiowania ustawy.sqlite — lokalne USTAWY wywoływane przez LAN MCP.
+# Po wdrożeniu PR USTAWY akt_po_eli jest bezpośrednim lokalnym źródłem Dz.U.
+# Opcjonalny read-only snapshot SQLite może przyspieszyć odczyty, ale nie jest konieczny.
 services:
   resolver:
     build:
@@ -14,13 +15,11 @@ services:
       - PRAWO_PL_MCP_URL_NSA=http://10.0.10.201:8405/mcp
       - PRAWO_PL_MCP_URL_USTAWY=http://10.0.10.201:8412/mcp
       - PRAWO_PL_MCP_URL_EU_SPARQL=http://10.0.10.201:8408/mcp
-      - PRAWO_USTAWY_SQLITE=/data/ustawy.sqlite
       - PRAWO_EU_PL_SQLITE=/data/eu-pl.sqlite
       - PRAWO_RESOLVER_CACHE=/data/prawo-resolver.sqlite
       - PRAWO_WEBWRIGHT_MCP_URL=http://webwright:8000/mcp
     volumes:
       - resolver-data:/data
-      - ${PRAWO_USTAWY_SQLITE_HOST:?Ścieżka kopii ustawy.sqlite jest wymagana}:/data/ustawy.sqlite:ro
     ports:
       - "127.0.0.1:8414:8000"
     depends_on:
