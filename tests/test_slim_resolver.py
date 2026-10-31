@@ -98,3 +98,71 @@ async def test_celex_nie_podmienia_angielskiego_snapshotu():
     assert "/PL/TXT/" in result["adres_urzedowy"]
     assert result["artykul"] == "33"
     assert result["dokument_pelny"] is False
+
+
+@pytest.mark.asyncio
+async def test_eli_z_lokalnych_ustaw_bez_dotykania_api(monkeypatch):
+    calls = []
+
+    def fake_local(eli, art):
+        calls.append(("ustawy", eli, art))
+        return {
+            "tekst": "Art. 23. Tekst z lokalnego USTAWY.",
+            "identyfikator": "eli:DU/2024/917",
+            "tytul": "Ustawa o ochronie zdrowia psychicznego",
+            "adres_urzedowy": "https://api.sejm.gov.pl/eli/acts/DU/2024/917",
+            "uwaga": "Stan brzmienia: tekst jednolity.",
+            "dokument_pelny": False,
+        }
+
+    def forbidden_api(url):
+        raise AssertionError("Nie wolno wywołać API Sejmu przy trafieniu w USTAWY")
+
+    monkeypatch.setattr(s, "read_ustawy", fake_local)
+    monkeypatch.setattr(s, "_odczyt_json", forbidden_api)
+    result = await s.pobierz_dokument("Dz.U. 2024 poz. 917", artykul="23")
+    assert result["pochodzenie"] == "lokalny_ustawy"
+    assert result["tekst"].startswith("Art. 23")
+    assert result["dokument_pelny"] is False
+    assert calls == [("ustawy", "DU/2024/917", "23")]
+
+
+@pytest.mark.asyncio
+async def test_celex_z_lokalnego_polskiego_korpusu_bez_przegladarki(monkeypatch):
+    async def forbidden_browser(*args, **kwargs):
+        raise AssertionError("Przeglądarka nie powinna ruszać przy cache hit")
+
+    monkeypatch.setattr(s, "read_eu_pl", lambda celex, art: {
+        "tekst": "Rozporządzenie (UE) 2016/679. Artykuł 33. " * 100,
+        "adres_zrodlowy": "https://eur-lex.europa.eu/legal-content/PL/TXT/",
+        "pobrano_at": "2026-10-31T00:00:00+00:00",
+        "sha256": "abc",
+    })
+    monkeypatch.setattr(s, "browser_fallback", forbidden_browser)
+    result = await s.pobierz_dokument("RODO art. 33")
+    assert result["pochodzenie"] == "lokalny_eu_pl"
+    assert result["status"] == "znaleziony"
+    assert result["artykul"] == "33"
+    assert result["dalszy_fragment"] is False
+
+
+@pytest.mark.asyncio
+async def test_weryfikowany_browser_pdf_trafia_do_local_cache(monkeypatch):
+    digest = "a" * 64
+    candidate = {
+        "status": "zweryfikowany_tekst_zapisany",
+        "zweryfikowany_tekst_urzedowy": True,
+        "dokument_pelny": True,
+        "adres_pdf": "https://eur-lex.europa.eu/legal-content/PL/TXT/PDF/?uri=CELEX:32016R0679",
+        "artifact_file": digest + ".txt", "artifact_sha256": digest,
+    }
+    monkeypatch.setattr(s, "load_verified_artifact", lambda filename, sha: "Urzędowy tekst " * 100)
+    stored = []
+    def save(*args, **kwargs):
+        stored.append((args, kwargs))
+        return True
+    monkeypatch.setattr(s, "save_cache", save)
+    result = await s._promuj_pdf(candidate, "celex:32016R0679:pl", "celex", 1, "33")
+    assert result["zapisano_lokalnie"] is True
+    assert stored[0][0][0] == "celex:32016R0679:pl"
+    assert stored[0][1]["metadane"]["wersja_urzedowa_pl"] is True
