@@ -18,7 +18,9 @@ from mcp.types import ToolAnnotations
 
 from .pool import POOL
 from .registry import SOURCES
-from .local_corpus import read_cache, read_eu_pl, read_ustawy, save_cache
+from .local_corpus import (read_cache, read_eu_pl, read_ustawy, save_cache,
+                           read_fragment, save_fragment, record_candidate)
+from .browser_bridge import browser_fallback
 
 PAGE_CHARS = 5000
 MAX_HTML_BYTES = 4_000_000
@@ -246,8 +248,27 @@ async def _orzeczenie(kind: str, value: str, strona: int) -> dict:
     if src is None:
         return {"status": "niepodłączone_źródło", "identyfikator": kind + ":" + value,
                 "adres_urzedowy": base, "tekst": "", "dokument_pelny": False}
+    offset = (strona - 1) * PAGE_CHARS
+    ident = kind + ":" + value
+    try:
+        local = await asyncio.to_thread(read_fragment, ident, offset, PAGE_CHARS)
+    except Exception:
+        local = None
+    if local:
+        end = local["offset"] + local["returned_length"]
+        more = end < local["total_length"]
+        return {"status": "znaleziony", "identyfikator": ident, "typ": "orzeczenie",
+                "pochodzenie": "lokalny_cache_fragmentów",
+                "adres_urzedowy": base, "tekst": local["tekst"],
+                "strona": strona, "dalszy_fragment": more,
+                "kolejna_strona": strona + 1 if more else None,
+                "total_chars": local["total_length"],
+                "next_offset": local["next_offset"],
+                "citations": local["citations"],
+                "dokument_pelny": False,
+                "uwaga": "Zachowany fragment w lokalnym cache; weryfikuj inne strony."}
     args = {"id": int(value)} if kind == "saos" else {"doc_id": value}
-    args |= {"offset": (strona - 1) * PAGE_CHARS, "limit": PAGE_CHARS}
+    args |= {"offset": offset, "limit": PAGE_CHARS}
     try:
         response = await POOL.call_with_metadata(src, "get_judgment", args)
     except Exception as exc:
@@ -259,10 +280,20 @@ async def _orzeczenie(kind: str, value: str, strona: int) -> dict:
     has_more = metadata.get("hasMore")
     verified = type(total) is int and type(has_more) is bool
     is_error = response.get("is_error", False)
+    cached = False
+    if verified and not is_error:
+        try:
+            cached = await asyncio.to_thread(
+                save_fragment, ident, offset, PAGE_CHARS, response.get("text", ""), metadata
+            )
+        except Exception:
+            cached = False
     return {
         "status": "błąd_źródła" if is_error else ("znaleziony" if verified else "niezweryfikowana_kompletność"),
         "identyfikator": kind + ":" + value,
         "typ": "orzeczenie",
+        "pochodzenie": "źródłowy_mcp_local_first",
+        "zapisano_fragment_lokalnie": cached,
         "zrodlo": "SAOS" if kind == "saos" else "CBOSA",
         "adres_urzedowy": base,
         "tekst": response.get("text", ""),
@@ -280,6 +311,7 @@ async def _orzeczenie(kind: str, value: str, strona: int) -> dict:
 async def pobierz_dokument(
     identyfikator: str, artykul: str | None = None,
     strona: int = 1, adres_zrodlowy: str | None = None,
+    sygnatura: str | None = None,
 ) -> dict:
     """Pobierz dokument po ID z REPERTORIUM: eli:DU/2024/917, saos:166511,
     nsa:389F2C5B67, celex:32016R0679:pl, RODO art. 33.
@@ -320,10 +352,20 @@ async def pobierz_dokument(
                     "adres_urzedowy": cached["adres_zrodlowy"],
                     "data_pobrania": cached["pobrano_at"], "sha256": cached["sha256"],
                     "dokument_pelny": True, "artykul": article} | part
-        return {"status": "tylko_link", "identyfikator": "celex:" + key + ":pl",
-                "typ": "akt_UE", "adres_urzedowy": uri, "artykul": article,
+        candidate = await browser_fallback("fetch_celex_pl", {"celex": key})
+        if candidate.get("status") == "kandydat_zapisany":
+            try:
+                await asyncio.to_thread(record_candidate, "celex:" + key + ":pl", candidate)
+            except (OSError, ValueError):
+                pass
+        return {"status": candidate.get("status", "tylko_link"),
+                "identyfikator": "celex:" + key + ":pl", "typ": "akt_UE",
+                "adres_urzedowy": uri, "artykul": article,
                 "dokument_pelny": False, "tekst": "",
-                "uwaga": "Oficjalny pełny tekst PL nie został pobrany. Nie podstawiaj angielskiego snapshotu."}
+                "pochodzenie": "fallback_webwright" if candidate.get("status") == "kandydat_zapisany" else "brak_w_korpusie_PL",
+                "metadane_pobrania": candidate,
+                "uwaga": "Brak zweryfikowanej pełnej treści w polskim korpusie. "
+                         "Wynik z przeglądarki jest kandydatem, nie tekstem autentycznym."}
     if kind == "ecli":
         return {"status": "tylko_link", "identyfikator": "ecli:" + key,
                 "adres_urzedowy": "https://eur-lex.europa.eu/legal-content/PL/TXT/?uri=ECLI:" + key,
@@ -336,8 +378,19 @@ async def pobierz_dokument(
             "edpb": "https://www.edpb.europa.eu/",
         }[kind]
         url = bezpieczny_adres(adres_zrodlowy, kind) or official
-        return {"status": "tylko_link", "identyfikator": kind + ":" + key,
+        candidate = None
+        if kind == "sn" and sygnatura:
+            candidate = await browser_fallback(
+                "fetch_orzeczenie_po_sygnaturze", {"sygnatura": sygnatura, "zrodlo": "sn"}
+            )
+            if candidate.get("status") == "kandydat_zapisany":
+                try:
+                    await asyncio.to_thread(record_candidate, kind + ":" + key, candidate)
+                except (OSError, ValueError):
+                    pass
+        return {"status": (candidate or {}).get("status", "tylko_link"), "identyfikator": kind + ":" + key,
                 "adres_urzedowy": url, "dokument_pelny": False, "tekst": "",
+                "metadane_pobrania": candidate,
                 "uwaga": "ID pochodzi z indeksu Repertorium; bez oficjalnego pobrania pełnej treści nie potwierdzono tekstu."}
     return {"status": "nieobsługiwany_id", "identyfikator": identyfikator,
             "uwaga": "Nie rozpoznano jednoznacznego identyfikatora. Odszukaj document_id przez Repertorium."}
