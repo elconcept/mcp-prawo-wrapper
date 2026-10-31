@@ -20,6 +20,7 @@ services:
       - PRAWO_WEBWRIGHT_MCP_URL=http://webwright:8000/mcp
     volumes:
       - resolver-data:/data
+      - webwright-data:/data/webwright:ro
     ports:
       - "127.0.0.1:8414:8000"
     depends_on:
