@@ -157,6 +157,47 @@ def _odczyt_html(url: str) -> str:
     return parser.text()
 
 
+async def _ustawy_mcp_artykul(eli: str, numer: str) -> dict | None:
+    """Awaryjnie korzysta z lokalnego istniejącego MCP USTAWY, bez internetu.
+
+    Gdy sqlite nie jest zamontowane w resolverze, istniejący serwer dalej
+    odczytuje swój lokalny indeks. To nie jest fallback do API Sejmu.
+    """
+    source = SOURCES.get("ustawy")
+    if not source:
+        return None
+    try:
+        result = await POOL.call_with_metadata(source, "akty", {})
+        data = (result.get("structured") or {}).get("result")
+        if not isinstance(data, list):
+            data = json.loads(result.get("text") or "[]")
+            if isinstance(data, dict):
+                data = data.get("result") or data.get("akty") or []
+        if not isinstance(data, list):
+            return None
+        entry = next((x for x in data if isinstance(x, dict) and str(x.get("eli")).upper() == eli.upper()), None)
+        if entry is None:
+            return None
+        item = await POOL.call_with_metadata(
+            source, "artykul", {"akt": entry["akt"], "art": numer, "komentarz": False}
+        )
+        payload = (item.get("structured") or {}).get("result")
+        if not isinstance(payload, dict):
+            payload = json.loads(item.get("text") or "{}")
+            if isinstance(payload, dict) and isinstance(payload.get("result"), dict):
+                payload = payload["result"]
+        if not isinstance(payload, dict) or payload.get("status") != "FOUND" or not payload.get("tekst"):
+            return None
+        return {"tekst": payload["tekst"], "tytul": entry.get("tytul"),
+                "zrodlo": "MCP USTAWY (lokalny SQLite)",
+                "stan_na": entry.get("stan_na"),
+                "tekst_jednolity": entry.get("tekst_jednolity"),
+                "dokument_pelny": False,
+                "uwaga": payload.get("uwaga") or "Brzmienie z istniejącej lokalnej bazy USTAWY"}
+    except Exception:
+        return None
+
+
 async def _eli(eli: str, strona: int, artykul: str | None = None) -> dict:
     pub, year, pos = eli.split("/")
     base = f"https://api.sejm.gov.pl/eli/acts/{pub}/{year}/{pos}"
@@ -171,6 +212,15 @@ async def _eli(eli: str, strona: int, artykul: str | None = None) -> dict:
             "dokument_pelny": False, "pochodzenie": "lokalny_ustawy",
             "uwaga": local["uwaga"] + " Stan prawny sprawdź względem daty aktu.",
         }
+    if artykul:
+        via_mcp = await _ustawy_mcp_artykul(eli, artykul)
+        if via_mcp:
+            part = stronicuj(via_mcp["tekst"], strona)
+            return {k: v for k, v in via_mcp.items() if k != "tekst"} | part | {
+                "identyfikator": "eli:" + eli, "artykul": artykul,
+                "adres_urzedowy": base, "pochodzenie": "lokalny_mcp_ustawy",
+                "dokument_pelny": False,
+            }
 
     # PIERWSZEŃSTWO 2: cache urzędowych, już raz pobranych aktów.
     try:
