@@ -289,8 +289,11 @@ async def _eli(eli: str, strona: int, artykul: str | None = None,
                 "dokument_pelny": False,
             }
 
-    if artykul:
-        pdf_cache = await cached_eli_pdf_article(eli, artykul, strona, na_dzien)
+    # Brzmienie na wskazany dzień wymaga wersjonowania nowelizacji.
+    # Sam klucz #day: nie jest dowodem historycznego stanu prawnego.
+    # Nie podajemy pod tą datą obecnego PDF ani lokalnych cache'ów.
+    if artykul and na_dzien is None:
+        pdf_cache = await cached_eli_pdf_article(eli, artykul, strona)
         if pdf_cache:
             return pdf_cache
 
@@ -331,9 +334,24 @@ async def _eli(eli: str, strona: int, artykul: str | None = None,
         "strona": strona,
         "uwaga": "Publikowany tekst nie musi odzwierciedlać wszystkich późniejszych nowelizacji.",
     }
-    if na_dzien is not None or not meta.get("textHTML"):
+    if na_dzien is not None:
+        # ELI text.pdf reprezentuje wskazane OGŁOSZENIE, a nie rekonstrukcję
+        # stanu prawnego na dowolny dzień. Do czasu implementacji wersjonowania
+        # nie zwracamy tekstu normatywnego jako potwierdzonego historycznie.
+        return result | {
+            "status": "brak_zweryfikowanego_brzmienia_na_dzien",
+            "żądana_data": na_dzien,
+            "adres_pdf": base + "/text.pdf",
+            "tekst": "", "dokument_pelny": False,
+            "artykul_kompletny": False,
+            "aktualnosc_prawna": "niezweryfikowana",
+            "uwaga": "Nie zweryfikowano brzmienia aktu na wskazany dzień. "
+                     "Dostępny PDF publikacji nie uwzględnia automatycznie "
+                     "nowelizacji ani przepisów przejściowych.",
+        }
+    if not meta.get("textHTML"):
         if artykul:
-            return result | await fetch_eli_pdf_article(eli, artykul, strona, na_dzien)
+            return result | await fetch_eli_pdf_article(eli, artykul, strona)
         return result | {
             "status": "tylko_link",
             "adres_pdf": base + "/text.pdf", "tekst": "",
