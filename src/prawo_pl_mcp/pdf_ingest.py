@@ -31,6 +31,7 @@ class _OnlyOfficialRedirects(HTTPRedirectHandler):
 def _get_official_pdf(url: str, source: str) -> bytes:
     trusted = {
         "sn": {"sn.pl", "www.sn.pl"},
+        "eli": {"api.sejm.gov.pl"},
         "eurlex": {"eur-lex.europa.eu", "www.eur-lex.europa.eu"},
     }
     hosts = trusted[source]
