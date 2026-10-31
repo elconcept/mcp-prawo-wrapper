@@ -13,6 +13,10 @@ from prawo_pl_mcp import slim_resolver as s
     ("M.P. z 2026 r. poz. 100", ("eli", "MP/2026/100", None)),
     ("nsa:389f2c5b67", ("nsa", "389F2C5B67", None)),
     ("saos:166511", ("saos", "166511", None)),
+    ("krs:28860", ("krs", "0000028860", None)),
+    ("KRS 0000028860", ("krs", "0000028860", None)),
+    ("uodo:PublicDocument-20260407-000000-000-abc123",
+     ("uodo", "PublicDocument-20260407-000000-000-abc123", None)),
     ("celex:32016R0679:pl", ("celex", "32016R0679", None)),
     ("RODO art. 33", ("celex", "32016R0679", "33")),
     ("eureka:646788", ("eureka", "646788", None)),
@@ -195,3 +199,45 @@ async def test_na_dzien_validation_and_does_not_call_sources(monkeypatch):
     for date_str in ("2026-02-30", "2026-1-01", "a", "2026/10/31"):
         result = await s.pobierz_dokument("eli:DU/2024/917", na_dzien=date_str)
         assert result["status"] == "błędna_data"
+
+
+@pytest.mark.asyncio
+async def test_krs_uses_exact_native_tool_and_does_not_claim_full_extract(monkeypatch):
+    class FakePool:
+        async def call_with_metadata(self, source, name, args):
+            assert name == "get_entity"
+            assert args == {"krs": "0000028860", "rejestr": "P"}
+            return {"text": '{"odpis":"aktualny","status":"aktywny"}',
+                    "structured": {}, "is_error": False}
+    monkeypatch.setattr(s, "POOL", FakePool())
+    r = await s.pobierz_dokument("krs:28860")
+    assert r["status"] == "znaleziony"
+    assert r["dokument_pelny"] is False
+    assert r["kompletnosc"] == "niezweryfikowana"
+    assert r["pochodzenie"] == "backend_bez_zapisu_do_cache"
+
+
+@pytest.mark.asyncio
+async def test_uodo_native_id_does_not_require_semantic_search(monkeypatch):
+    class FakePool:
+        async def call_with_metadata(self, source, name, args):
+            assert name == "uodo_get_decision"
+            assert args == {"id": "PublicDocument-20260407-000000-000-abc123"}
+            return {"text": "", "structured": {"result": {
+                "sentencja": "Decyzja", "uzasadnienie": "Treść"}}, "is_error": False}
+    monkeypatch.setattr(s, "POOL", FakePool())
+    r = await s.pobierz_dokument("uodo:PublicDocument-20260407-000000-000-abc123")
+    assert r["status"] == "znaleziony"
+    assert "uzasadnienie" in r["tekst"]
+    assert r["dokument_pelny"] is False
+
+
+@pytest.mark.asyncio
+async def test_uodo_metadata_missing_is_not_complete_document(monkeypatch):
+    class FakePool:
+        async def call_with_metadata(self, source, name, args):
+            return {"text": "", "structured": {}, "is_error": False}
+    monkeypatch.setattr(s, "POOL", FakePool())
+    r = await s.pobierz_dokument("uodo:PublicDocument-20260407-000000-000-abc123")
+    assert r["status"] == "pusty_wynik_źródła"
+    assert r["dokument_pelny"] is False
