@@ -59,6 +59,11 @@ def przeanalizuj_pdf_eli(
         art_key = _normalizuj_artykul(art)
     except (ValueError, AttributeError):
         return {"status": "błędny_artykul", "dokument_pelny": False}
+    if na_dzien is not None:
+        return {"status": "brak_zweryfikowanego_brzmienia_na_dzien",
+                "identyfikator": "eli:" + eli, "artykul": art_key,
+                "dokument_pelny": False, "artykul_kompletny": False,
+                "uwaga": "Data parsera nie oznacza historycznego stanu prawnego."}
     source_url = f"https://api.sejm.gov.pl/eli/acts/{eli}/text.pdf"
     if pdf_data is None:
         pdf_data = _get_official_pdf(source_url, "eli")
