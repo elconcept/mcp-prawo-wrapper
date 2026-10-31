@@ -137,3 +137,24 @@ def test_pdf_artifact_requires_original_sha_and_isolated_path(tmp_path, monkeypa
     assert not l.verify_pdf_artifact(file.name, "0" * 64)
     file.write_bytes(raw + b"tamper")
     assert not l.verify_pdf_artifact(file.name, digest)
+
+
+def test_fragment_pagination_requires_native_next_offset(tmp_path, monkeypatch):
+    monkeypatch.setenv(l.CACHE_DB_ENV, str(tmp_path / "fragments.sqlite"))
+    base = {"offset": 0, "totalLength": 100, "returnedLength": 40,
+            "hasMore": True, "nextOffset": 40, "citations": []}
+    assert l.save_fragment("saos:123", 0, 40, "x" * 40, base)
+    assert not l.save_fragment("saos:123", 0, 40, "x" * 40,
+                               {**base, "nextOffset": None})
+    assert not l.save_fragment("saos:123", 0, 40, "x" * 40,
+                               {**base, "nextOffset": 41})
+    assert not l.save_fragment("saos:123", 0, 40, "x" * 40,
+                               {**base, "hasMore": False})
+    final = {"offset": 60, "totalLength": 100, "returnedLength": 40,
+             "hasMore": False, "nextOffset": None}
+    assert l.save_fragment("saos:123", 60, 40, "y" * 40, final)
+    assert not l.save_fragment("saos:123", 60, 40, "y" * 40,
+                               {**final, "nextOffset": 100})
+    empty = {"offset": 0, "totalLength": 100, "returnedLength": 0,
+             "hasMore": True, "nextOffset": 0}
+    assert not l.save_fragment("saos:123", 0, 40, "", empty)
