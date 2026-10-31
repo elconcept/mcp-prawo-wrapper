@@ -166,3 +166,32 @@ async def test_webwright_pdf_bez_zaufanego_parsera_nie_trafia_do_local_cache(mon
     result = await s._promuj_pdf(candidate, "celex:32016R0679:pl", "celex", 1, "33")
     assert result is None
     assert stored == []
+
+
+@pytest.mark.asyncio
+async def test_saos_same_metadata_without_text_is_not_a_judgment(monkeypatch):
+    """Rzeczywisty portal może zwrócić wyłącznie citations i metadane."""
+    class MetadataOnlyPool:
+        async def call_with_metadata(self, src, tool, args):
+            return {"text": "", "structured": {
+                "totalLength": 7686, "returnedLength": 100,
+                "offset": 0, "hasMore": True, "nextOffset": 100,
+                "citations": [{"title": "V CSK 145/14", "snippet": "początek"}],
+            }, "is_error": False}
+    monkeypatch.setattr(s, "POOL", MetadataOnlyPool())
+    result = await s._orzeczenie("saos", "166511", 1)
+    assert result["status"] == "niezweryfikowany_fragment"
+    assert result["tekst"] == ""
+    assert result["dokument_pelny"] is False
+    assert result["dalszy_fragment"] is None
+    assert result["zapisano_fragment_lokalnie"] is False
+
+
+@pytest.mark.asyncio
+async def test_na_dzien_validation_and_does_not_call_sources(monkeypatch):
+    async def forbidden(*args, **kwargs):
+        raise AssertionError("Nie wolno odpytywać serwisów przy błędnej dacie")
+    monkeypatch.setattr(s, "_eli", forbidden)
+    for date_str in ("2026-02-30", "2026-1-01", "a", "2026/10/31"):
+        result = await s.pobierz_dokument("eli:DU/2024/917", na_dzien=date_str)
+        assert result["status"] == "błędna_data"
