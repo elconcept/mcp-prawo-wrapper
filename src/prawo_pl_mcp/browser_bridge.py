@@ -9,7 +9,7 @@ import os
 
 
 async def browser_fallback(tool: str, args: dict) -> dict:
-    if tool not in ("fetch_celex_pl", "fetch_orzeczenie_po_sygnaturze"):
+    if tool not in ("fetch_celex_pl", "fetch_orzeczenie_po_sygnaturze", "fetch_eli_pdf"):
         raise ValueError("Niedozwolone narzędzie przeglądarki")
     url = os.environ.get("PRAWO_WEBWRIGHT_MCP_URL", "").strip()
     if not url:
