@@ -6,7 +6,7 @@ def _meta(offset=0, limit=100, total=7686):
     return {
         "totalLength": total, "returnedLength": min(limit, total - offset),
         "offset": offset, "hasMore": offset + limit < total,
-        "nextOffset": min(offset + limit, total),
+        "nextOffset": min(offset + limit, total) if offset + limit < total else None,
         "citations": [{"title": "V CSK 145/14"}],
     }
 
