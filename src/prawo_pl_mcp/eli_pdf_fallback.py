@@ -35,6 +35,11 @@ def _page(text: str, page: int) -> dict:
 
 async def cached_eli_pdf_article(eli: str, article: str, page: int,
                                  na_dzien: str | None = None) -> dict | None:
+    # Klucz z datą to data parsowania, nie prawdziwa wersja historyczna.
+    # Nie ufaj staremu wpisowi, nawet jeżeli został wcześniej zapisany pod
+    # kluczem odpowiadającym wskazanej dacie.
+    if na_dzien is not None:
+        return None
     try:
         key = _key(eli, article, na_dzien)
         cached = await asyncio.to_thread(read_cache, key)
@@ -65,8 +70,10 @@ async def cached_eli_pdf_article(eli: str, article: str, page: int,
         "pochodzenie": "lokalny_cache_pdf",
         "adres_pdf": cached["adres_zrodlowy"],
         "sha256": cached["sha256"], "pdf_sha256": meta.get("pdf_sha256"),
-        "stan_prawny_na": meta.get("na_dzien"),
+        "data_parsowania": meta.get("na_dzien"),
+        "stan_prawny_na": None,
         "aktualnosc_prawna": "niezweryfikowana",
+        "uwaga": "Data parsowania PDF nie potwierdza stanu prawnego na ten dzień.",
         "raport_wiernosci": meta.get("raport_wiernosci"),
     } | _page(cached["tekst"], page)
 
@@ -78,13 +85,18 @@ async def fetch_eli_pdf_article(eli: str, article: str, page: int,
     Nie udaje pełnego oryginalnego Dz.U.; pełna publikacja może mieć załączniki.
     """
     expected_id = "eli:" + eli
+    if na_dzien is not None:
+        return {"status": "brak_zweryfikowanego_brzmienia_na_dzien",
+                "identyfikator": expected_id, "artykul": article,
+                "artykul_kompletny": False, "dokument_pelny": False, "tekst": "",
+                "uwaga": "PDF konkretnej publikacji nie dowodzi historycznego brzmienia przepisu."}
     try:
-        key = _key(eli, article, na_dzien)
+        key = _key(eli, article)
     except ValueError:
         return {"status": "błędny_artykul", "identyfikator": expected_id,
                 "dokument_pelny": False}
     result = await browser_fallback(
-        "fetch_eli_pdf", {"eli": eli, "artykul": article, "na_dzien": key.split("#day:")[1]}
+        "fetch_eli_pdf", {"eli": eli, "artykul": article, "na_dzien": None}
     )
     raw = result.get("raport")
     if (result.get("status") != "wierny_odczyt_artykulu_z_pdf"
@@ -146,6 +158,8 @@ async def fetch_eli_pdf_article(eli: str, article: str, page: int,
         "pochodzenie": "fallback_pdf_zapisany_lokalnie",
         "adres_pdf": expected_url, "pdf_sha256": result.get("pdf_sha256"),
         "aktualnosc_prawna": "niezweryfikowana",
-        "stan_prawny_na": raw.get("na_dzien"),
+        "data_parsowania": raw.get("na_dzien"),
+        "stan_prawny_na": None,
+        "uwaga": "Dzień parsowania PDF nie oznacza potwierdzonego stanu prawnego.",
         "raport_wiernosci": raw,
     } | _page(text, page)
