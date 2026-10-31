@@ -70,7 +70,8 @@ def test_native_fragments_cached_without_false_full_claim(tmp_path, monkeypatch)
     meta = {"offset": 0, "totalLength": 9900, "returnedLength": 5000,
             "nextOffset": 5000, "hasMore": True,
             "citations": [{"title": "V CSK 145/14"}]}
-    assert l.save_fragment(ident, 0, 5000, "Tekst SAOS strona 1", meta)
+    assert l.save_fragment(ident, 0, 5000, "S" * 5000, meta)
+    assert not l.save_fragment(ident, 0, 5000, "S" * 4999, meta)
     row = l.read_fragment(ident, 0, 5000)
     assert row["total_length"] == 9900
     assert row["returned_length"] == 5000
