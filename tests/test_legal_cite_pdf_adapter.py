@@ -85,3 +85,14 @@ def test_pdf_invalid_identifier_short_circuits_network(tmp_path, monkeypatch):
                         lambda *a: (_ for _ in ()).throw(AssertionError("no API")))
     assert pdf.przeanalizuj_pdf_eli("DU/2024/xx", "23", str(tmp_path))["status"] == "błędny_id"
     assert pdf.przeanalizuj_pdf_eli("DU/2024/917", "DROP TABLE", str(tmp_path))["status"] == "błędny_artykul"
+
+
+def test_pdf_adapter_rejects_historical_date_before_download(tmp_path, monkeypatch):
+    monkeypatch.setattr(pdf, "_get_official_pdf",
+                        lambda *args: (_ for _ in ()).throw(
+                            AssertionError("Brak pobierania bez wersji historycznej")))
+    result = pdf.przeanalizuj_pdf_eli("DU/2024/917", "23", str(tmp_path),
+                                     na_dzien="2025-05-01")
+    assert result["status"] == "brak_zweryfikowanego_brzmienia_na_dzien"
+    assert result["dokument_pelny"] is False
+    assert result["artykul_kompletny"] is False
