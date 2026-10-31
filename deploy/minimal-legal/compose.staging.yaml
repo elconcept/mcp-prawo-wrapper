@@ -10,11 +10,13 @@ services:
     image: mcp-prawo-resolver:staging
     environment:
       - TZ=Europe/Warsaw
-      - PRAWO_PL_MCP_SOURCES=saos,nsa,ustawy,eu-sparql
+      - PRAWO_PL_MCP_SOURCES=saos,nsa,ustawy,eu-sparql,krs,uodo
       - PRAWO_PL_MCP_URL_SAOS=http://mcp-saos:8000/mcp
       - PRAWO_PL_MCP_URL_NSA=http://mcp-nsa:8000/mcp
       - PRAWO_PL_MCP_URL_USTAWY=http://mcp-ustawy:8080/mcp
       - PRAWO_PL_MCP_URL_EU_SPARQL=http://mcp-eu-sparql:8000/mcp
+      - PRAWO_PL_MCP_URL_KRS=http://mcp-krs:8000/mcp
+      - PRAWO_PL_MCP_URL_UODO=http://mcp-uodo:3000/mcp
       - PRAWO_EU_PL_SQLITE=/data/eu-pl.sqlite
       - PRAWO_RESOLVER_CACHE=/data/prawo-resolver.sqlite
       - PRAWO_WEBWRIGHT_MCP_URL=http://webwright:8000/mcp
