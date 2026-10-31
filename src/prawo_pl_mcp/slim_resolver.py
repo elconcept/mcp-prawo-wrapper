@@ -398,27 +398,45 @@ async def _orzeczenie(kind: str, value: str, strona: int) -> dict:
                 "adres_urzedowy": base, "tekst": "", "dokument_pelny": False,
                 "uwaga": f"Nie udało się pobrać orzeczenia: {type(exc).__name__}"}
     metadata = response.get("structured") or {}
+    if isinstance(metadata.get("result"), dict):
+        metadata = metadata["result"]
+    body = response.get("text") or ""
     total = metadata.get("totalLength")
     has_more = metadata.get("hasMore")
-    verified = type(total) is int and type(has_more) is bool
+    returned = metadata.get("returnedLength")
+    next_offset = metadata.get("nextOffset")
     is_error = response.get("is_error", False)
+    # Metadane długości nie gwarantują, że source MCP przesłał TEKST,
+    # szczególnie gdy pośrednik przenosi jedynie citations. Zaufanie
+    # wymaga dokładnie jednego, ciągłego fragmentu o spodziewanej długości.
+    verified = (
+        not is_error
+        and type(total) is int and total >= offset
+        and type(returned) is int
+        and returned == min(PAGE_CHARS, total - offset)
+        and len(body) == returned
+        and metadata.get("offset") == offset
+        and type(has_more) is bool
+        and has_more == (offset + returned < total)
+        and next_offset == offset + returned
+    )
     cached = False
-    if verified and not is_error:
+    if verified:
         try:
             cached = await asyncio.to_thread(
-                save_fragment, ident, offset, PAGE_CHARS, response.get("text", ""), metadata
+                save_fragment, ident, offset, PAGE_CHARS, body, metadata
             )
         except Exception:
             cached = False
     return {
-        "status": "błąd_źródła" if is_error else ("znaleziony" if verified else "niezweryfikowana_kompletność"),
+        "status": "błąd_źródła" if is_error else ("znaleziony" if verified else "niezweryfikowany_fragment"),
         "identyfikator": kind + ":" + value,
         "typ": "orzeczenie",
         "pochodzenie": "źródłowy_mcp_local_first",
         "zapisano_fragment_lokalnie": cached,
         "zrodlo": "SAOS" if kind == "saos" else "CBOSA",
         "adres_urzedowy": base,
-        "tekst": response.get("text", ""),
+        "tekst": body if verified else "",
         "strona": strona,
         "dalszy_fragment": has_more if verified else None,
         "kolejna_strona": (strona + 1 if has_more else None) if verified else None,
@@ -426,7 +444,7 @@ async def _orzeczenie(kind: str, value: str, strona: int) -> dict:
         "next_offset": metadata.get("nextOffset") if verified else None,
         "citations": metadata.get("citations", []),
         "dokument_pelny": verified and strona == 1 and not has_more and not is_error,
-        "uwaga": None if verified else "Brak metadanych długości: tekst może być tylko pierwszym fragmentem orzeczenia.",
+        "uwaga": None if verified else "Nie potwierdzono ciągłego fragmentu zgodnego z metadanymi: źródło może zwracać wyłącznie cytowania albo obcięty tekst.",
     }
 
 
