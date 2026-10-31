@@ -275,3 +275,25 @@ def record_candidate(identyfikator: str, data: dict) -> None:
                 (identyfikator,str(data.get("status") or "nieznany"),
                  json.dumps(data, ensure_ascii=False, default=str),_utc()),
             )
+
+
+def load_verified_artifact(filename: str, digest: str) -> str:
+    """Wspólny wolumen tylko do odczytu, bez przyjmowania dowolnej ścieżki.
+
+    Nazwa dokładnie <SHA256>.txt; zawartość musi dać ten sam SHA256 co metadata
+    przekazane z wewnętrznego Webwright. Dopiero taki tekst można włączyć do cache.
+    """
+    import re
+    if (not re.fullmatch(r"[0-9a-f]{64}\.txt", filename)
+            or digest != filename[:-4]):
+        raise ValueError("Nieprawidłowa nazwa lub suma artefaktu")
+    base = Path(os.environ.get("PRAWO_WEBWRIGHT_ARTIFACTS", "/data/webwright/verified"))
+    target = base / filename
+    if not target.resolve().is_relative_to(base.resolve()):
+        raise ValueError("Wyjście poza katalog artefaktów")
+    if target.stat().st_size > 25_000_000:
+        raise ValueError("Artefakt za duży")
+    text = target.read_text(encoding="utf-8")
+    if hashlib.sha256(text.encode("utf-8")).hexdigest() != digest:
+        raise ValueError("Nieprawidłowa suma SHA-256 artefaktu")
+    return text
