@@ -86,8 +86,16 @@ def extract_native_judgment_text(
         return None
     text = body[from_pos:to_pos]
     suffix = body[to_pos:]
-    if suffix and not suffix.startswith(("\n[...] Skrocono.", "\r\n[...] Skrocono.")):
-        # Nie zakładaj, że nieopisany tekst po wycinku to nieszkodliwa
-        # stopka: mógłby to być fragment utracony/źle policzony.
-        return None
+    if suffix:
+        expected_suffix = (
+            r"\r?\n\[\.\.\.\] Skrocono\. Nastepny fragment: "
+            r"get_judgment\(id=" + re.escape(source_id) +
+            r", offset=" + str(offset + expected) +
+            r", limit=\d+\)\. Pelna tresc: https://www\.saos\.org\.pl/judgments/" +
+            re.escape(source_id)
+        )
+        # NSA ma osobny format; akceptujemy tylko dokładnie rozpoznany
+        # schemat (a nie dowolne dalsze znaki lub dołączone instrukcje).
+        if kind != "saos" or re.fullmatch(expected_suffix, suffix) is None:
+            return None
     return text
