@@ -15,6 +15,7 @@ from urllib.parse import urlparse
 
 from fastmcp import FastMCP
 from mcp.types import ToolAnnotations
+from .pdf_ingest import ingest_verified_pdf
 
 BASE = Path(__file__).resolve().parents[2] / "vendor" / "webwright_legal_pl"
 OUT = Path(os.environ.get("WEBWRIGHT_DATA_DIR", "/data/webwright"))
@@ -87,6 +88,19 @@ async def fetch_celex_pl(celex: str) -> dict:
     if (meta.get("celex") != celex or meta.get("jezyk") != "PL"
             or urlparse(url).hostname != "eur-lex.europa.eu"):
         return {"status": "błąd_weryfikacji", "uwaga": "Niezgodne metadane CELEX/języka"}
+    if meta.get("pdf_url"):
+        try:
+            verified = await asyncio.to_thread(
+                ingest_verified_pdf, meta["pdf_url"], source="eurlex",
+                identity=celex, directory=str(OUT / "verified")
+            )
+            if verified.get("status") == "zweryfikowany_tekst_zapisany":
+                return {**verified, "identyfikator": "celex:" + celex + ":pl",
+                        "tytul": meta.get("tytul"), "adres_urzedowy": url,
+                        "pobrano_at": meta.get("pobrano_at"),
+                        "jezyk": "PL", "zweryfikowany_tekst_urzedowy": True}
+        except Exception:
+            pass  # HTML i metadane pozostają kandydatem; nie podawaj pełnego tekstu.
     return {"status": "kandydat_zapisany", "identyfikator": "celex:" + celex + ":pl",
             "tytul": meta.get("tytul"), "adres_urzedowy": url,
             "pdf_url": meta.get("pdf_url"), "pobrano_at": meta.get("pobrano_at"),
@@ -131,6 +145,20 @@ async def fetch_orzeczenie_po_sygnaturze(sygnatura: str, zrodlo: str = "sn") -> 
                 url = meta.get("url", "")
                 if urlparse(url).hostname not in ("sn.pl", "www.sn.pl"):
                     return {"status": "błąd_weryfikacji", "uwaga": "Niepoprawny host SN"}
+                if meta.get("pdf_url"):
+                    try:
+                        verified = await asyncio.to_thread(
+                            ingest_verified_pdf, meta["pdf_url"], source="sn",
+                            identity=sygnatura, directory=str(OUT / "verified")
+                        )
+                        if verified.get("status") == "zweryfikowany_tekst_zapisany":
+                            return {**verified, "sygnatura": sygnatura,
+                                    "typ": meta.get("typ"), "data": meta.get("data"),
+                                    "adres_urzedowy": url,
+                                    "pobrano_at": meta.get("pobrano_at"),
+                                    "zweryfikowany_tekst_urzedowy": True}
+                    except Exception:
+                        pass
                 return {"status": "kandydat_zapisany",
                         "sygnatura": sygnatura, "typ": meta.get("typ"),
                         "data": meta.get("data"), "url": url,
