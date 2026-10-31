@@ -70,7 +70,7 @@ async def test_nsa_brak_metadanych_nie_oznacza_kompletnego_tekstu(monkeypatch):
 
     monkeypatch.setattr(s, "POOL", FakePool())
     result = await s._orzeczenie("nsa", "389F2C5B67", 2)
-    assert result["status"] == "niezweryfikowana_kompletność"
+    assert result["status"] == "niezweryfikowany_fragment"
     assert result["dalszy_fragment"] is None
     assert result["dokument_pelny"] is False
 
@@ -80,8 +80,9 @@ async def test_saos_przekazuje_cytowania_i_natywny_has_more(monkeypatch):
     class FakePool:
         async def call_with_metadata(self, src, tool, args):
             assert args == {"id": 166511, "offset": 0, "limit": 5000}
-            return {"text": "Pełny fragment", "structured": {
-                "totalLength": 11000, "hasMore": True, "nextOffset": 5000,
+            return {"text": "S" * 5000, "structured": {
+                "totalLength": 11000, "returnedLength": 5000,
+                "offset": 0, "hasMore": True, "nextOffset": 5000,
                 "citations": [{"title": "V CSK 145/14"}]}, "is_error": False}
 
     monkeypatch.setattr(s, "POOL", FakePool())
