@@ -21,6 +21,7 @@ from .registry import SOURCES
 from .local_corpus import (read_cache, read_eu_pl, read_ustawy, save_cache,
                            read_fragment, save_fragment, record_candidate, load_verified_artifact)
 from .browser_bridge import browser_fallback
+from .eli_pdf_fallback import cached_eli_pdf_article, fetch_eli_pdf_article
 
 PAGE_CHARS = 5000
 MAX_HTML_BYTES = 4_000_000
@@ -274,6 +275,11 @@ async def _eli(eli: str, strona: int, artykul: str | None = None) -> dict:
                 "dokument_pelny": False,
             }
 
+    if artykul:
+        pdf_cache = await cached_eli_pdf_article(eli, artykul, strona)
+        if pdf_cache:
+            return pdf_cache
+
     # PIERWSZEŃSTWO 2: cache urzędowych, już raz pobranych aktów.
     try:
         cached = await asyncio.to_thread(read_cache, "eli:" + eli)
@@ -309,12 +315,14 @@ async def _eli(eli: str, strona: int, artykul: str | None = None) -> dict:
         "uwaga": "Publikowany tekst nie musi odzwierciedlać wszystkich późniejszych nowelizacji.",
     }
     if not meta.get("textHTML"):
+        if artykul:
+            return result | await fetch_eli_pdf_article(eli, artykul, strona)
         return result | {
             "status": "tylko_link",
-            "adres_pdf": base + "/text.pdf",
-            "tekst": "",
+            "adres_pdf": base + "/text.pdf", "tekst": "",
             "dokument_pelny": False,
-            "uwaga": "API nie udostępnia HTML tego aktu — wymagany odczyt urzędowego PDF.",
+            "uwaga": "PDF-only: podaj konkretny artykuł, aby uruchomić "
+                     "dwuczytnikowy adapter legal-cite. Nie rozpoznano jeszcze całego aktu.",
         }
     try:
         text = await asyncio.to_thread(_odczyt_html, base + "/text.html")
@@ -417,6 +425,11 @@ async def _promuj_pdf(candidate: dict, ident: str, kind: str, strona: int,
     Webwright zwraca SHA i nazwę artefaktu, nie wielomegabajtowe treści przez MCP.
     Tekst weryfikujemy drugi raz na współdzielonym wolumenie tylko do odczytu.
     """
+    # Brak parsera wierności/identyfikacji dla całych wyroków SN i aktów CELEX:
+    # dotychczasowy pypdf był tylko heurystyką. Nie wolno awansować go do
+    # trusted cache bez odrębnego protokołu kontroli jakości.
+    if kind in ("sn", "celex"):
+        return None
     if (candidate.get("status") != "zweryfikowany_tekst_zapisany"
             or candidate.get("zweryfikowany_tekst_urzedowy") is not True
             or candidate.get("dokument_pelny") is not True):
