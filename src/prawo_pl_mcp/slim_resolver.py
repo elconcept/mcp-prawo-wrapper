@@ -349,9 +349,13 @@ async def _eli(eli: str, strona: int, artykul: str | None = None,
                      "Dostępny PDF publikacji nie uwzględnia automatycznie "
                      "nowelizacji ani przepisów przejściowych.",
         }
+    # Żądanie konkretnego artykułu NIE może zwrócić pierwszej strony
+    # pełnego HTML. HTML publikacji nie jest zweryfikowaną ekstrakcją art.
+    # Nawet gdy ELI udostępnia textHTML, pierwszeństwo ma adapter PDF
+    # z kontrolą wierności pojedynczego artykułu (fail-closed).
+    if artykul:
+        return result | await fetch_eli_pdf_article(eli, artykul, strona)
     if not meta.get("textHTML"):
-        if artykul:
-            return result | await fetch_eli_pdf_article(eli, artykul, strona)
         return result | {
             "status": "tylko_link",
             "adres_pdf": base + "/text.pdf", "tekst": "",
