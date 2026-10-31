@@ -22,7 +22,8 @@ def _raw(offset=0, limit=100, total=7686, *, identity="166511"):
     )
     suffix = (
         "\n[...] Skrocono. Nastepny fragment: "
-        f"get_judgment(id={identity}, offset={offset + limit}, limit={limit})."
+        f"get_judgment(id={identity}, offset={offset + limit}, limit={limit}). "
+        f"Pelna tresc: https://www.saos.org.pl/judgments/{identity}"
     )
     return header + text + suffix, text
 
