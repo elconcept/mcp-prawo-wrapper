@@ -19,7 +19,7 @@ from mcp.types import ToolAnnotations
 from .pool import POOL
 from .registry import SOURCES
 from .local_corpus import (read_cache, read_eu_pl, read_ustawy, save_cache,
-                           read_fragment, save_fragment, record_candidate)
+                           read_fragment, save_fragment, record_candidate, load_verified_artifact)
 from .browser_bridge import browser_fallback
 
 PAGE_CHARS = 5000
@@ -410,6 +410,49 @@ async def _orzeczenie(kind: str, value: str, strona: int) -> dict:
     }
 
 
+async def _promuj_pdf(candidate: dict, ident: str, kind: str, strona: int,
+                       artykul: str | None = None) -> dict | None:
+    """Promuj tylko kompletny, zgodny z identyfikatorem tekst oficjalnego PDF.
+
+    Webwright zwraca SHA i nazwę artefaktu, nie wielomegabajtowe treści przez MCP.
+    Tekst weryfikujemy drugi raz na współdzielonym wolumenie tylko do odczytu.
+    """
+    if (candidate.get("status") != "zweryfikowany_tekst_zapisany"
+            or candidate.get("zweryfikowany_tekst_urzedowy") is not True
+            or candidate.get("dokument_pelny") is not True):
+        return None
+    url = candidate.get("adres_pdf")
+    host = urlparse(url).hostname if isinstance(url, str) else None
+    allowed = ({"eur-lex.europa.eu", "www.eur-lex.europa.eu"} if kind == "celex"
+               else {"sn.pl", "www.sn.pl"})
+    if host not in allowed or not url.startswith("https://"):
+        return None
+    try:
+        text = await asyncio.to_thread(
+            load_verified_artifact, candidate["artifact_file"], candidate["artifact_sha256"]
+        )
+        meta = {"źródło": "EUR-Lex" if kind == "celex" else "Sąd Najwyższy",
+                "wersja_urzedowa_pl": kind == "celex",
+                "sygnatura": candidate.get("sygnatura"),
+                "strony_pdf": candidate.get("strony_pdf"),
+                "stan_na": candidate.get("data")}
+        stored = await asyncio.to_thread(
+            save_cache, ident, jezyk="pl", tekst=text, url=url, metadane=meta
+        )
+        if not stored:
+            return None
+        frag = stronicuj(text, strona)
+        return {"status": "znaleziony", "identyfikator": ident,
+                "typ": "akt_UE" if kind == "celex" else "orzeczenie_SN",
+                "adres_urzedowy": url, "pochodzenie": "zdalny_pdf_zapisany_lokalnie",
+                "sha256": candidate["artifact_sha256"], "zapisano_lokalnie": True,
+                "dokument_pelny": True, "artykul": artykul,
+                "uwaga": "Urzędowy PDF odczytany w całości i zachowany lokalnie. "
+                         "Weryfikuj aktualność oraz poprawność ekstrakcji tekstu."} | frag
+    except (OSError, KeyError, ValueError):
+        return None
+
+
 async def pobierz_dokument(
     identyfikator: str, artykul: str | None = None,
     strona: int = 1, adres_zrodlowy: str | None = None,
@@ -455,6 +498,9 @@ async def pobierz_dokument(
                     "data_pobrania": cached["pobrano_at"], "sha256": cached["sha256"],
                     "dokument_pelny": True, "artykul": article} | part
         candidate = await browser_fallback("fetch_celex_pl", {"celex": key})
+        promoted = await _promuj_pdf(candidate, "celex:" + key + ":pl", "celex", strona, article)
+        if promoted:
+            return promoted
         if candidate.get("status") == "kandydat_zapisany":
             try:
                 await asyncio.to_thread(record_candidate, "celex:" + key + ":pl", candidate)
@@ -514,6 +560,9 @@ async def pobierz_dokument(
             candidate = await browser_fallback(
                 "fetch_orzeczenie_po_sygnaturze", {"sygnatura": sygnatura, "zrodlo": "sn"}
             )
+            promoted = await _promuj_pdf(candidate, kind + ":" + key, "sn", strona)
+            if promoted:
+                return promoted
             if candidate.get("status") == "kandydat_zapisany":
                 try:
                     await asyncio.to_thread(record_candidate, kind + ":" + key, candidate)
