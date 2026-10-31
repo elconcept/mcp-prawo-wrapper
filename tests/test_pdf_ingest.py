@@ -36,8 +36,9 @@ def test_import_pdf_weryfikuje_przed_zapisem(tmp_path, monkeypatch):
     r = p.ingest_verified_pdf(
         "https://eur-lex.europa.eu/legal-content/PL/TXT/PDF/?uri=CELEX:32016R0679",
         source="eurlex", identity="32016R0679", directory=str(tmp_path))
-    assert r["status"] == "zweryfikowany_tekst_zapisany"
-    assert r["dokument_pelny"] is True
+    assert r["status"] == "kandydat_pdf_zapisany"
+    assert r["dokument_pelny"] is False
+    assert r["wynik_wiernosci"] == "niezweryfikowany"
     assert (tmp_path / r["artifact_file"]).read_text(encoding="utf-8") == text
     assert r["artifact_sha256"] == hashlib.sha256(text.encode()).hexdigest()
 
