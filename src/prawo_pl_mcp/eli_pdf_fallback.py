@@ -6,6 +6,7 @@ Dla pozostałych przypadków odpowiedź jawnie wskazuje status kandydata.
 from __future__ import annotations
 
 import asyncio
+from datetime import date
 import re
 
 from .browser_bridge import browser_fallback
@@ -14,11 +15,12 @@ from .local_corpus import read_cache, save_cache, load_verified_artifact
 PAGE_CHARS = 5000
 
 
-def _key(eli: str, article: str) -> str:
+def _key(eli: str, article: str, na_dzien: str | None = None) -> str:
     art = article.strip().lower().replace("^", "_")
     if not re.fullmatch(r"\d{1,4}(?:_[0-9]{1,3}[a-z]?|[a-z]{1,3})?", art):
         raise ValueError("Nieprawidłowy artykuł")
-    return f"eli:{eli}#art:{art}"
+    day = date.fromisoformat(na_dzien) if na_dzien else date.today()
+    return f"eli:{eli}#art:{art}#day:{day.isoformat()}"
 
 
 def _page(text: str, page: int) -> dict:
@@ -31,9 +33,10 @@ def _page(text: str, page: int) -> dict:
             "kolejna_strona": page + 1 if has_more else None}
 
 
-async def cached_eli_pdf_article(eli: str, article: str, page: int) -> dict | None:
+async def cached_eli_pdf_article(eli: str, article: str, page: int,
+                                 na_dzien: str | None = None) -> dict | None:
     try:
-        key = _key(eli, article)
+        key = _key(eli, article, na_dzien)
         cached = await asyncio.to_thread(read_cache, key)
     except (ValueError, OSError):
         return None
@@ -42,7 +45,8 @@ async def cached_eli_pdf_article(eli: str, article: str, page: int) -> dict | No
     meta = cached["metadane"]
     if (meta.get("fidelity_method") != "legal-cite-eli2md-pdftotext"
             or meta.get("article_verified") is not True
-            or meta.get("identyfikator") != "eli:" + eli):
+            or meta.get("identyfikator") != "eli:" + eli
+            or meta.get("na_dzien") != key.split("#day:")[1]):
         return None
     return {
         "identyfikator": "eli:" + eli,
@@ -57,18 +61,21 @@ async def cached_eli_pdf_article(eli: str, article: str, page: int) -> dict | No
     } | _page(cached["tekst"], page)
 
 
-async def fetch_eli_pdf_article(eli: str, article: str, page: int) -> dict:
+async def fetch_eli_pdf_article(eli: str, article: str, page: int,
+                                na_dzien: str | None = None) -> dict:
     """Akceptuje wyłącznie wynik z legal-cite (kolejność słów + brak pominięć).
 
     Nie udaje pełnego oryginalnego Dz.U.; pełna publikacja może mieć załączniki.
     """
     expected_id = "eli:" + eli
     try:
-        key = _key(eli, article)
+        key = _key(eli, article, na_dzien)
     except ValueError:
         return {"status": "błędny_artykul", "identyfikator": expected_id,
                 "dokument_pelny": False}
-    result = await browser_fallback("fetch_eli_pdf", {"eli": eli, "artykul": article})
+    result = await browser_fallback(
+        "fetch_eli_pdf", {"eli": eli, "artykul": article, "na_dzien": key.split("#day:")[1]}
+    )
     raw = result.get("raport")
     if (result.get("status") != "wierny_odczyt_artykulu_z_pdf"
             or result.get("identyfikator") != expected_id
@@ -79,7 +86,8 @@ async def fetch_eli_pdf_article(eli: str, article: str, page: int) -> dict:
             or raw.get("wierny_odczyt") is not True
             or raw.get("monotoniczna_numeracja") is not True
             or raw.get("liczba_trafien_artykulu") != 1
-            or raw.get("silnik") != "legal-cite-pl/pdf_tj.py"):
+            or raw.get("silnik") != "legal-cite-pl/pdf_tj.py"
+            or raw.get("na_dzien") != key.split("#day:")[1]):
         return {"status": result.get("status", "niezweryfikowany_pdf"),
                 "identyfikator": expected_id,
                 "artykul": article, "dokument_pelny": False, "artykul_kompletny": False,
@@ -103,7 +111,7 @@ async def fetch_eli_pdf_article(eli: str, article: str, page: int) -> dict:
                 "fidelity_method": "legal-cite-eli2md-pdftotext",
                 "article_verified": True,
                 "pdf_sha256": result.get("pdf_sha256"),
-                "na_dzien": raw.get("na_dzien"),
+                "na_dzien": key.split("#day:")[1],
                 "raport_wiernosci": raw,
                 "parser_sha": raw.get("wersja_legal_cite"),
             },
