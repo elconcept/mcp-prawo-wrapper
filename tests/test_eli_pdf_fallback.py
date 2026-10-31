@@ -19,7 +19,10 @@ async def test_eli_pdf_cache_hit_never_calls_browser(tmp_path, monkeypatch):
                   "fidelity_method": "legal-cite-eli2md-pdftotext",
                   "article_verified": True, "na_dzien": "2026-10-31",
                   "pdf_sha256": "f" * 64,
-                  "raport_wiernosci": {"wierny_odczyt": True}},
+                  "parser_sha": "2c4b7bf6e2af56b42b8b87a9bdbfe93d8078c988",
+                  "raport_wiernosci": {"silnik": "legal-cite-pl/pdf_tj.py", "wersja_legal_cite": "2c4b7bf6e2af56b42b8b87a9bdbfe93d8078c988",
+                                      "wierny_odczyt": True, "monotoniczna_numeracja": True,
+                                      "liczba_trafien_artykulu": 1, "na_dzien": "2026-10-31"}},
     )
     async def forbidden(*args):
         raise AssertionError("Brak zgody na sieć przy cache HIT")
@@ -54,6 +57,9 @@ async def test_eli_verified_worker_artifact_is_cached(tmp_path, monkeypatch):
     folder = tmp_path / "verified"
     folder.mkdir()
     (folder / (digest + ".txt")).write_text(text, encoding="utf-8")
+    pdf_blob = b"%PDF-1.7\n" + b"TEST" * 200
+    pdf_digest = hashlib.sha256(pdf_blob).hexdigest()
+    (folder / (pdf_digest + ".pdf")).write_bytes(pdf_blob)
     monkeypatch.setenv("PRAWO_WEBWRIGHT_ARTIFACTS", str(folder))
     async def candidate(tool, args):
         assert tool == "fetch_eli_pdf"
@@ -64,7 +70,8 @@ async def test_eli_verified_worker_artifact_is_cached(tmp_path, monkeypatch):
                 "dokument_pelny": False, "artykul_kompletny": True,
                 "adres_pdf": "https://api.sejm.gov.pl/eli/acts/DU/2024/917/text.pdf",
                 "artifact_file": digest + ".txt",
-                "artifact_sha256": digest, "pdf_sha256": "f" * 64,
+                "artifact_sha256": digest, "pdf_sha256": pdf_digest,
+                "artifact_pdf": pdf_digest + ".pdf",
                 "raport": {"silnik": "legal-cite-pl/pdf_tj.py",
                            "wierny_odczyt": True,
                            "monotoniczna_numeracja": True,
@@ -92,7 +99,15 @@ async def test_eli_pdf_cache_is_separated_by_day(tmp_path, monkeypatch):
         url="https://api.sejm.gov.pl/eli/acts/DU/2024/917/text.pdf",
         metadane={"źródło": "ELI", "identyfikator": "eli:DU/2024/917",
                   "fidelity_method": "legal-cite-eli2md-pdftotext",
-                  "article_verified": True, "na_dzien": "2026-10-30"},
+                  "article_verified": True, "na_dzien": "2026-10-30",
+                  "pdf_sha256": "f" * 64,
+                  "parser_sha": "2c4b7bf6e2af56b42b8b87a9bdbfe93d8078c988",
+                  "raport_wiernosci": {
+                      "silnik": "legal-cite-pl/pdf_tj.py",
+                      "wersja_legal_cite": "2c4b7bf6e2af56b42b8b87a9bdbfe93d8078c988",
+                      "wierny_odczyt": True, "monotoniczna_numeracja": True,
+                      "liczba_trafien_artykulu": 1, "na_dzien": "2026-10-30",
+                  }},
     )
     assert (await e.cached_eli_pdf_article(
         "DU/2024/917", "23", 1, "2026-10-30"
@@ -100,3 +115,31 @@ async def test_eli_pdf_cache_is_separated_by_day(tmp_path, monkeypatch):
     assert await e.cached_eli_pdf_article(
         "DU/2024/917", "23", 1, "2026-10-31"
     ) is None
+
+
+@pytest.mark.asyncio
+async def test_pdf_worker_rejected_when_original_is_missing(tmp_path, monkeypatch):
+    monkeypatch.setenv("PRAWO_RESOLVER_CACHE", str(tmp_path / "cache.sqlite"))
+    folder = tmp_path / "verified"
+    folder.mkdir()
+    monkeypatch.setenv("PRAWO_WEBWRIGHT_ARTIFACTS", str(folder))
+    text = "Art. 23. Długi tekst do próby walidacji. " * 12
+    text_sha = hashlib.sha256(text.encode()).hexdigest()
+    (folder / (text_sha + ".txt")).write_text(text, encoding="utf-8")
+    async def candidate(_tool, _args):
+        return {
+            "status": "wierny_odczyt_artykulu_z_pdf", "identyfikator": "eli:DU/2024/917",
+            "artykul": "23", "artykul_kompletny": True, "dokument_pelny": False,
+            "adres_pdf": "https://api.sejm.gov.pl/eli/acts/DU/2024/917/text.pdf",
+            "artifact_file": text_sha + ".txt", "artifact_sha256": text_sha,
+            "artifact_pdf": "f" * 64 + ".pdf", "pdf_sha256": "f" * 64,
+            "raport": {"silnik": "legal-cite-pl/pdf_tj.py",
+                       "wersja_legal_cite": "2c4b7bf6e2af56b42b8b87a9bdbfe93d8078c988",
+                       "wierny_odczyt": True, "monotoniczna_numeracja": True,
+                       "liczba_trafien_artykulu": 1, "na_dzien": "2026-10-31"},
+        }
+    monkeypatch.setattr(e, "browser_fallback", candidate)
+    result = await e.fetch_eli_pdf_article("DU/2024/917", "23", 1, "2026-10-31")
+    assert result["status"] == "błąd_integralności"
+    assert result["dokument_pelny"] is False
+    assert await e.cached_eli_pdf_article("DU/2024/917", "23", 1, "2026-10-31") is None
