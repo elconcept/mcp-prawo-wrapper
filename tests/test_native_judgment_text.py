@@ -73,3 +73,52 @@ def test_last_partial_chunk():
         "--- Tresc (znaki 100-110 z 110 lacznie) ---\n" + text
     )
     assert extract("saos", "166511", body, meta, offset=100, limit=100) == text
+
+
+def _nsa_body(text: str, *, offset=0, limit=5000, total=13348,
+              identity="389F2C5B67") -> tuple[str, dict]:
+    returned = len(text)
+    more = offset + returned < total
+    header = (
+        "=== ORZECZENIE CBOSA (NSA / WSA) ===\n\n"
+        "Sygnatura  : II SA/Wa 1353/19\n"
+        f"ID CBOSA   : {identity}\n"
+        "Sąd        : Wojewódzki Sąd Administracyjny w Warszawie\n"
+        "Data       : 2020-03-03\n"
+        "Źródło: https://orzeczenia.nsa.gov.pl/doc/389F2C5B67\n\n"
+        f"--- Treść orzeczenia (znaki {offset}–{offset + returned} z {total}) ---\n"
+    )
+    suffix = (f"\nDalsza treść: get_judgment(doc_id=\"{identity}\", "
+              f"offset={offset + returned}, limit={limit}).") if more else ""
+    meta = {"totalLength": total, "returnedLength": returned,
+            "offset": offset, "hasMore": more,
+            "nextOffset": (offset + returned if more else None)}
+    return header + text + suffix, meta
+
+
+def test_nsa_pr2_two_chunks_reconstruct_exactly():
+    # Wersja PR NSA #2 formatuje całe d.text przez .slice(0, limit).
+    full = ("Sentencja. " + "Ochrona danych osobowych, zażalenie, sąd. " * 350)[:13348]
+    total = len(full)
+    first = full[:5000]
+    second = full[5000:10000]
+    last = full[10000:]
+    parts = []
+    for offset, txt in ((0, first), (5000, second), (10000, last)):
+        raw, metadata = _nsa_body(txt, offset=offset, total=total)
+        parsed = extract("nsa", "389F2C5B67", raw, metadata, offset=offset, limit=5000)
+        assert parsed == txt
+        parts.append(parsed)
+    assert "".join(parts) == full
+
+
+def test_nsa_reject_mismatch_and_wrong_suffix():
+    raw, meta = _nsa_body("N" * 5000)
+    assert extract("nsa", "0000000000", raw, meta, offset=0, limit=5000) is None
+    assert extract("nsa", "389F2C5B67", raw + "INJECTED", meta, offset=0, limit=5000) is None
+    assert extract("nsa", "389F2C5B67", raw.replace("0–5000", "0–4000"),
+                   meta, offset=0, limit=5000) is None
+    empty, last_meta = _nsa_body("N" * 200, offset=13148, total=13348)
+    assert extract("nsa", "389F2C5B67", empty + "\nDalsza treść: "
+                   "get_judgment(doc_id=\"389F2C5B67\", offset=13348, limit=5000).",
+                   last_meta, offset=13148, limit=5000) is None
