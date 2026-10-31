@@ -486,6 +486,8 @@ async def _backend_dokument(rodzaj: str, identyfikator: str, strona: int) -> dic
             return {"status": "pusty_wynik_źródła", "identyfikator": ident,
                     "dokument_pelny": False, "tekst": ""}
         part = stronicuj(body, strona)
+        if part["status"] == "znaleziony":
+            part["status"] = "odczyt_backendu_niezweryfikowany"
         return {"identyfikator": ident,
                 "typ": "odpis_KRS" if rodzaj == "krs" else "decyzja_UODO",
                 "zrodlo": "oficjalny rejestr KRS" if rodzaj == "krs" else "MCP UODO",
