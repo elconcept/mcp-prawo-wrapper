@@ -94,11 +94,12 @@ async def fetch_celex_pl(celex: str) -> dict:
                 ingest_verified_pdf, meta["pdf_url"], source="eurlex",
                 identity=celex, directory=str(OUT / "verified")
             )
-            if verified.get("status") == "zweryfikowany_tekst_zapisany":
+            if verified.get("status") == "kandydat_pdf_zapisany":
                 return {**verified, "identyfikator": "celex:" + celex + ":pl",
                         "tytul": meta.get("tytul"), "adres_urzedowy": url,
                         "pobrano_at": meta.get("pobrano_at"),
-                        "jezyk": "PL", "zweryfikowany_tekst_urzedowy": True}
+                        "jezyk": "PL", "zweryfikowany_tekst_urzedowy": False,
+                        "dokument_pelny": False}
         except Exception:
             pass  # HTML i metadane pozostają kandydatem; nie podawaj pełnego tekstu.
     return {"status": "kandydat_zapisany", "identyfikator": "celex:" + celex + ":pl",
@@ -151,12 +152,13 @@ async def fetch_orzeczenie_po_sygnaturze(sygnatura: str, zrodlo: str = "sn") -> 
                             ingest_verified_pdf, meta["pdf_url"], source="sn",
                             identity=sygnatura, directory=str(OUT / "verified")
                         )
-                        if verified.get("status") == "zweryfikowany_tekst_zapisany":
+                        if verified.get("status") == "kandydat_pdf_zapisany":
                             return {**verified, "sygnatura": sygnatura,
                                     "typ": meta.get("typ"), "data": meta.get("data"),
                                     "adres_urzedowy": url,
                                     "pobrano_at": meta.get("pobrano_at"),
-                                    "zweryfikowany_tekst_urzedowy": True}
+                                    "zweryfikowany_tekst_urzedowy": False,
+                                    "dokument_pelny": False}
                     except Exception:
                         pass
                 return {"status": "kandydat_zapisany",
