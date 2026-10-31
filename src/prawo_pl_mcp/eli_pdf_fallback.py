@@ -10,7 +10,7 @@ from datetime import date
 import re
 
 from .browser_bridge import browser_fallback
-from .local_corpus import read_cache, save_cache, load_verified_artifact
+from .local_corpus import read_cache, save_cache, load_verified_artifact, verify_pdf_artifact
 
 PAGE_CHARS = 5000
 
@@ -43,10 +43,20 @@ async def cached_eli_pdf_article(eli: str, article: str, page: int,
     if not cached or not cached["kompletny"]:
         return None
     meta = cached["metadane"]
+    report = meta.get("raport_wiernosci")
     if (meta.get("fidelity_method") != "legal-cite-eli2md-pdftotext"
             or meta.get("article_verified") is not True
             or meta.get("identyfikator") != "eli:" + eli
-            or meta.get("na_dzien") != key.split("#day:")[1]):
+            or meta.get("na_dzien") != key.split("#day:")[1]
+            or meta.get("parser_sha") != "2c4b7bf6e2af56b42b8b87a9bdbfe93d8078c988"
+            or not isinstance(report, dict)
+            or report.get("silnik") != "legal-cite-pl/pdf_tj.py"
+            or report.get("wersja_legal_cite") != meta.get("parser_sha")
+            or report.get("wierny_odczyt") is not True
+            or report.get("monotoniczna_numeracja") is not True
+            or report.get("liczba_trafien_artykulu") != 1
+            or report.get("na_dzien") != key.split("#day:")[1]
+            or not re.fullmatch(r"[0-9a-f]{64}", meta.get("pdf_sha256") or "")):
         return None
     return {
         "identyfikator": "eli:" + eli,
@@ -87,7 +97,9 @@ async def fetch_eli_pdf_article(eli: str, article: str, page: int,
             or raw.get("monotoniczna_numeracja") is not True
             or raw.get("liczba_trafien_artykulu") != 1
             or raw.get("silnik") != "legal-cite-pl/pdf_tj.py"
-            or raw.get("na_dzien") != key.split("#day:")[1]):
+            or raw.get("wersja_legal_cite") != "2c4b7bf6e2af56b42b8b87a9bdbfe93d8078c988"
+            or raw.get("na_dzien") != key.split("#day:")[1]
+            or not re.fullmatch(r"[0-9a-f]{64}", result.get("pdf_sha256") or "")):
         return {"status": result.get("status", "niezweryfikowany_pdf"),
                 "identyfikator": expected_id,
                 "artykul": article, "dokument_pelny": False, "artykul_kompletny": False,
@@ -97,6 +109,11 @@ async def fetch_eli_pdf_article(eli: str, article: str, page: int,
     if result.get("adres_pdf") != expected_url:
         return {"status": "błąd_pochodzenia", "dokument_pelny": False, "tekst": ""}
     try:
+        pdf_ok = await asyncio.to_thread(
+            verify_pdf_artifact, result["artifact_pdf"], result["pdf_sha256"]
+        )
+        if not pdf_ok:
+            raise ValueError("Brak lub zmieniony oryginalny PDF")
         text = await asyncio.to_thread(
             load_verified_artifact, result["artifact_file"], result["artifact_sha256"]
         )
