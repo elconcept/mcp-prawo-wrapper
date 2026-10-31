@@ -199,11 +199,27 @@ def read_eu_pl(celex: str, artykul: str | None = None) -> dict | None:
     file = os.environ.get(EU_PL_DB_ENV)
     if not file:
         return None
-    key = f"celex:{celex}:pl"
+    import re
+    canonical = None
+    if artykul is not None:
+        canonical = artykul.strip().lower().replace("art.", "").strip()
+        if re.fullmatch(r"[0-9]{1,4}[a-z]?", canonical) is None:
+            return None
+    key = f"celex:{celex}:pl" + (f"#art:{canonical}" if canonical else "")
     row = read_cache(key, path=file, existing_only=True)
-    if row and row["kompletny"] and row["metadane"].get("wersja_urzedowa_pl") is True:
-        return row | {"tryb": "eu_pl_sqlite"}
-    return None
+    if not row or not row["kompletny"] or row["metadane"].get("wersja_urzedowa_pl") is not True:
+        return None
+    if canonical is not None and (
+        row["metadane"].get("artykul") != canonical
+        or row["metadane"].get("article_extraction_verified") is not True
+        or not re.fullmatch(r"[0-9a-f]{64}",
+                            row["metadane"].get("source_document_sha256") or "")
+    ):
+        # Z pełnego aktu nie wyciągaj pierwszej strony jako żądanego art.
+        return None
+    return row | {"tryb": "eu_pl_sqlite",
+                  "artykul_kompletny": canonical is not None,
+                  "dokument_pelny": False if canonical else True}
 
 
 def read_fragment(identyfikator: str, offset: int, limit: int) -> dict | None:
