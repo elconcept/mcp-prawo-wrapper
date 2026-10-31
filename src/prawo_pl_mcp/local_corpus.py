@@ -298,3 +298,28 @@ def load_verified_artifact(filename: str, digest: str) -> str:
     if hashlib.sha256(text.encode("utf-8")).hexdigest() != digest:
         raise ValueError("Nieprawidłowa suma SHA-256 artefaktu")
     return text
+
+
+def verify_pdf_artifact(filename: str, digest: str) -> bool:
+    """Potwierdź SHA-256 zachowanego urzędowego PDF, zanim artykuł trafi do cache.
+
+    Nie przyjmuj dowolnej ścieżki, symlinków ani pustych dokumentów.
+    """
+    import re
+    if (not isinstance(digest, str) or
+            re.fullmatch(r"[0-9a-f]{64}", digest) is None or
+            filename != digest + ".pdf"):
+        return False
+    base = Path(os.environ.get("PRAWO_WEBWRIGHT_ARTIFACTS", "/data/webwright/verified"))
+    path = base / filename
+    try:
+        if not path.resolve().is_relative_to(base.resolve()):
+            return False
+        if not path.is_file() or not 9 <= path.stat().st_size <= 20_000_000:
+            return False
+        import hmac
+        raw = path.read_bytes()
+        return (raw.startswith(b"%PDF-") and
+                hmac.compare_digest(hashlib.sha256(raw).hexdigest(), digest))
+    except (OSError, ValueError):
+        return False
