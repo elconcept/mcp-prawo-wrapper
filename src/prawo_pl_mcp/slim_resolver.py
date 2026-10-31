@@ -18,6 +18,7 @@ from mcp.types import ToolAnnotations
 
 from .pool import POOL
 from .registry import SOURCES
+from .local_corpus import read_cache, read_eu_pl, read_ustawy, save_cache
 
 PAGE_CHARS = 5000
 MAX_HTML_BYTES = 4_000_000
@@ -154,9 +155,36 @@ def _odczyt_html(url: str) -> str:
     return parser.text()
 
 
-async def _eli(eli: str, strona: int) -> dict:
+async def _eli(eli: str, strona: int, artykul: str | None = None) -> dict:
     pub, year, pos = eli.split("/")
     base = f"https://api.sejm.gov.pl/eli/acts/{pub}/{year}/{pos}"
+    # PIERWSZEŃSTWO 1: USTAWY, lokalny SQLite z artykułami i ELI.
+    try:
+        local = await asyncio.to_thread(read_ustawy, eli, artykul)
+    except Exception as exc:
+        local = None  # awaria indeksu nie blokuje oddzielnego, zweryfikowanego cache
+    if local:
+        part = stronicuj(local["tekst"], strona)
+        return {k: v for k, v in local.items() if k != "tekst"} | part | {
+            "dokument_pelny": False, "pochodzenie": "lokalny_ustawy",
+            "uwaga": local["uwaga"] + " Stan prawny sprawdź względem daty aktu.",
+        }
+
+    # PIERWSZEŃSTWO 2: cache urzędowych, już raz pobranych aktów.
+    try:
+        cached = await asyncio.to_thread(read_cache, "eli:" + eli)
+    except Exception:
+        cached = None
+    if cached and cached["kompletny"]:
+        part = stronicuj(cached["tekst"], strona)
+        return {"identyfikator": "eli:" + eli, "typ": "akt_prawny",
+                "zrodlo": cached["metadane"].get("źródło"),
+                "adres_urzedowy": cached["adres_zrodlowy"],
+                "pobrano_at": cached["pobrano_at"], "sha256": cached["sha256"],
+                "pochodzenie": "lokalny_cache", "strona": strona,
+                "dokument_pelny": True} | part
+
+    # WYŁĄCZNIE FALLBACK: oficjalne ELI API.
     try:
         meta = await asyncio.to_thread(_odczyt_json, base)
     except (HTTPError, URLError, TimeoutError, ValueError) as exc:
@@ -189,8 +217,22 @@ async def _eli(eli: str, strona: int) -> dict:
     except (HTTPError, URLError, TimeoutError, ValueError, LookupError) as exc:
         return result | {"status": "niedostępny_tekst", "tekst": "",
                          "dokument_pelny": False, "uwaga": f"Nie udało się odczytać HTML: {type(exc).__name__}"}
+    try:
+        saved = await asyncio.to_thread(
+            save_cache, "eli:" + eli, jezyk="pl", tekst=text,
+            url=base + "/text.html",
+            metadane={"źródło": "API ELI Kancelarii Sejmu",
+                      "eli": eli, "tytul": meta.get("title"),
+                      "stan_prawny_na": meta.get("legalStatusDate"),
+                      "rodzaj": "HTML bez załączników binarnych"},
+        )
+    except (OSError, ValueError) as exc:
+        saved = False
     fragment = stronicuj(text, strona)
     return result | fragment | {
+        "pochodzenie": "zdalny_fallback",
+        "zapisano_lokalnie": saved,
+        "sha256": __import__("hashlib").sha256(text.encode("utf-8")).hexdigest(),
         "format_tekstu": "tekst wyodrębniony z urzędowego HTML (układ może się różnić)",
         "adres_html": base + "/text.html",
         "dokument_pelny": not fragment["dalszy_fragment"] and strona == 1,
@@ -252,15 +294,32 @@ async def pobierz_dokument(
     kind, key, parsed_art = rozpoznaj(identyfikator)
     article = artykul or parsed_art
     if kind == "eli":
-        wynik = await _eli(key, strona)
-        if article:
-            wynik["uwaga_dot_artykulu"] = "Wersja wstępna zwraca strony całego aktu, a nie wyodrębniony artykuł " + str(article) + "."
+        wynik = await _eli(key, strona, article)
+        if article and wynik.get("pochodzenie") != "lokalny_ustawy":
+            wynik["uwaga_dot_artykulu"] = "Wersja zdalna/cache stronicuje cały akt; nie wyodrębnia art. " + str(article) + "."
         return wynik
     if kind in ("nsa", "saos"):
         return await _orzeczenie(kind, key, strona)
 
     if kind == "celex":
         uri = "https://eur-lex.europa.eu/legal-content/PL/TXT/?uri=CELEX:" + key
+        # Wymagany urzędowy polski korpus — istniejący EN nie może go zastąpić.
+        local = await asyncio.to_thread(read_eu_pl, key, article)
+        if local:
+            part = stronicuj(local["tekst"], strona)
+            return {"status": "znaleziony", "identyfikator": "celex:" + key + ":pl",
+                    "typ": "akt_UE", "pochodzenie": "lokalny_eu_pl",
+                    "adres_urzedowy": local["adres_zrodlowy"],
+                    "data_pobrania": local["pobrano_at"], "sha256": local["sha256"],
+                    "dokument_pelny": True, "artykul": article} | part
+        cached = await asyncio.to_thread(read_cache, "celex:" + key + ":pl")
+        if cached and cached["kompletny"] and cached["metadane"].get("wersja_urzedowa_pl") is True:
+            part = stronicuj(cached["tekst"], strona)
+            return {"status": "znaleziony", "identyfikator": "celex:" + key + ":pl",
+                    "typ": "akt_UE", "pochodzenie": "lokalny_cache",
+                    "adres_urzedowy": cached["adres_zrodlowy"],
+                    "data_pobrania": cached["pobrano_at"], "sha256": cached["sha256"],
+                    "dokument_pelny": True, "artykul": article} | part
         return {"status": "tylko_link", "identyfikator": "celex:" + key + ":pl",
                 "typ": "akt_UE", "adres_urzedowy": uri, "artykul": article,
                 "dokument_pelny": False, "tekst": "",
