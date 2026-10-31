@@ -79,3 +79,24 @@ async def test_eli_verified_worker_artifact_is_cached(tmp_path, monkeypatch):
     hit = await e.cached_eli_pdf_article("DU/2024/917", "23", 1, "2026-10-31")
     assert hit["tekst"] == text
     assert hit["pochodzenie"] == "lokalny_cache_pdf"
+
+
+@pytest.mark.asyncio
+async def test_eli_pdf_cache_is_separated_by_day(tmp_path, monkeypatch):
+    from prawo_pl_mcp.local_corpus import save_cache
+    monkeypatch.setenv("PRAWO_RESOLVER_CACHE", str(tmp_path / "cache.sqlite"))
+    text = "Art. 23. Wierny, ale stan prawny nieustalony. " * 10
+    assert save_cache(
+        "eli:DU/2024/917#art:23#day:2026-10-30",
+        jezyk="pl", tekst=text,
+        url="https://api.sejm.gov.pl/eli/acts/DU/2024/917/text.pdf",
+        metadane={"źródło": "ELI", "identyfikator": "eli:DU/2024/917",
+                  "fidelity_method": "legal-cite-eli2md-pdftotext",
+                  "article_verified": True, "na_dzien": "2026-10-30"},
+    )
+    assert (await e.cached_eli_pdf_article(
+        "DU/2024/917", "23", 1, "2026-10-30"
+    ))["tekst"] == text
+    assert await e.cached_eli_pdf_article(
+        "DU/2024/917", "23", 1, "2026-10-31"
+    ) is None
