@@ -1,0 +1,55 @@
+# STAGING ONLY. Nie podłączać do lex ani nie zastępować Repertorium przed E2E.
+# Zanim uruchomisz: umieść kopię bieżącego ustawy.sqlite w pliku hosta,
+# ustaw PRAWO_USTAWY_SQLITE_HOST (wymagane); aktualizuj ją po reindeksacji USTAWY.
+services:
+  resolver:
+    build:
+      context: ../..
+      dockerfile: deploy/minimal-legal/Dockerfile.resolver
+    image: mcp-prawo-resolver:staging
+    environment:
+      - TZ=Europe/Warsaw
+      - PRAWO_PL_MCP_SOURCES=saos,nsa,ustawy,eu-sparql
+      - PRAWO_PL_MCP_URL_SAOS=http://10.0.10.201:8402/mcp
+      - PRAWO_PL_MCP_URL_NSA=http://10.0.10.201:8405/mcp
+      - PRAWO_PL_MCP_URL_USTAWY=http://10.0.10.201:8412/mcp
+      - PRAWO_PL_MCP_URL_EU_SPARQL=http://10.0.10.201:8408/mcp
+      - PRAWO_USTAWY_SQLITE=/data/ustawy.sqlite
+      - PRAWO_EU_PL_SQLITE=/data/eu-pl.sqlite
+      - PRAWO_RESOLVER_CACHE=/data/prawo-resolver.sqlite
+      - PRAWO_WEBWRIGHT_MCP_URL=http://webwright:8000/mcp
+    volumes:
+      - resolver-data:/data
+      - ${PRAWO_USTAWY_SQLITE_HOST:?Ścieżka kopii ustawy.sqlite jest wymagana}:/data/ustawy.sqlite:ro
+    ports:
+      - "127.0.0.1:8414:8000"
+    depends_on:
+      - webwright
+    networks: [legal_private]
+    restart: unless-stopped
+    security_opt: [no-new-privileges:true]
+    pids_limit: 180
+  webwright:
+    build:
+      context: ../..
+      dockerfile: deploy/minimal-legal/Dockerfile.webwright
+    image: mcp-webwright-legal-pl:staging
+    environment:
+      - TZ=Europe/Warsaw
+      - WEBWRIGHT_DATA_DIR=/data/webwright
+    volumes:
+      - webwright-data:/data/webwright
+    # Bez mapowania portów hosta. Dostępne tylko z sieci legal_private.
+    networks: [legal_private]
+    restart: unless-stopped
+    security_opt: [no-new-privileges:true]
+    pids_limit: 180
+    shm_size: 512m
+
+volumes:
+  resolver-data:
+  webwright-data:
+
+networks:
+  legal_private:
+    internal: false  # Playwright musi pobierać oficjalne strony sądów/UE
