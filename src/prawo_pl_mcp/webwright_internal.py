@@ -16,6 +16,7 @@ from urllib.parse import urlparse
 from fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 from .pdf_ingest import ingest_verified_pdf
+from .legal_cite_pdf_adapter import przeanalizuj_pdf_eli
 
 BASE = Path(__file__).resolve().parents[2] / "vendor" / "webwright_legal_pl"
 OUT = Path(os.environ.get("WEBWRIGHT_DATA_DIR", "/data/webwright"))
@@ -175,7 +176,26 @@ async def fetch_orzeczenie_po_sygnaturze(sygnatura: str, zrodlo: str = "sn") -> 
     return {"status": "błąd_weryfikacji", "uwaga": "Nie znaleziono zgodnych artefaktów"}
 
 
+async def fetch_eli_pdf(eli: str, artykul: str, na_dzien: str | None = None) -> dict:
+    """Wewnętrzny fallback PDF-only ELI: legal-cite eli2md + pdftotext.
+
+    Działa tylko dla konkretnego artykułu. Przy niejednoznaczności nie
+    przyznaje statusu wierności i nie dostarcza tekstu do publicznego cache.
+    """
+    async with SEM:
+        try:
+            return await asyncio.to_thread(
+                przeanalizuj_pdf_eli, eli, artykul, str(OUT / "verified"),
+                na_dzien=na_dzien
+            )
+        except Exception as exc:
+            return {"status": "błąd_źródła", "identyfikator": "eli:" + str(eli),
+                    "dokument_pelny": False,
+                    "uwaga": f"Odczyt PDF ELI nie powiódł się: {type(exc).__name__}"}
+
+
 mcp.tool(fetch_celex_pl, annotations=RO)
+mcp.tool(fetch_eli_pdf, annotations=RO)
 mcp.tool(fetch_orzeczenie_po_sygnaturze, annotations=RO)
 
 
