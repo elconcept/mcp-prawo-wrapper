@@ -548,6 +548,19 @@ async def pobierz_dokument(
                 "metadane_pobrania": candidate,
                 "uwaga": "Nie pobrano urzędowego polskiego pełnego tekstu; metadane wyszukiwania to nie orzeczenie."}
     if kind in ("sn", "ms", "eureka", "edpb"):
+        # Nie uruchamiaj ponownie przeglądarki, gdy pełny PDF SN już
+        # zaindeksowano lokalnie pod dokładnym identyfikatorem Repertorium.
+        ident = kind + ":" + key
+        if kind == "sn":
+            local_judgment = await asyncio.to_thread(read_cache, ident)
+            if local_judgment and local_judgment["kompletny"]:
+                frag = stronicuj(local_judgment["tekst"], strona)
+                return {"status": "znaleziony", "identyfikator": ident,
+                        "typ": "orzeczenie_SN", "pochodzenie": "lokalny_cache",
+                        "adres_urzedowy": local_judgment["adres_zrodlowy"],
+                        "sha256": local_judgment["sha256"],
+                        "data_pobrania": local_judgment["pobrano_at"],
+                        "dokument_pelny": True} | frag
         official = {
             "sn": "https://www.sn.pl/pl/wyszukiwarka-orzeczen",
             "eureka": "https://eureka.mf.gov.pl/informacje/podglad/" + key,
