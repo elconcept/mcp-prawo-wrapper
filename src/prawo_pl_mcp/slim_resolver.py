@@ -582,6 +582,11 @@ async def pobierz_dokument(
     if kind in ("krs", "uodo"):
         return await _backend_dokument(kind, key, strona)
 
+    if na_dzien is not None and kind != "eli":
+        return {"status": "nieobsługiwana_data_dla_źródła",
+                "identyfikator": identyfikator, "dokument_pelny": False,
+                "tekst": "", "uwaga": "Datę na_dzien obsługuje obecnie tylko ELI. "
+                                   "Nie podano aktualnego tekstu jako historycznego."}
     if kind == "celex":
         uri = "https://eur-lex.europa.eu/legal-content/PL/TXT/?uri=CELEX:" + key
         # Wymagany urzędowy polski korpus — istniejący EN nie może go zastąpić.
@@ -592,8 +597,12 @@ async def pobierz_dokument(
                     "typ": "akt_UE", "pochodzenie": "lokalny_eu_pl",
                     "adres_urzedowy": local["adres_zrodlowy"],
                     "data_pobrania": local["pobrano_at"], "sha256": local["sha256"],
-                    "dokument_pelny": True, "artykul": article} | part
-        cached = await asyncio.to_thread(read_cache, "celex:" + key + ":pl")
+                    "dokument_pelny": bool(local.get("dokument_pelny")) if not article else False,
+                    "artykul_kompletny": bool(local.get("artykul_kompletny")) if article else None,
+                    "artykul": article} | part
+        # Whole-act cache nigdy nie zastępuje strukturalnego wyciągu artykułu.
+        cached = (await asyncio.to_thread(read_cache, "celex:" + key + ":pl")
+                  if article is None else None)
         if cached and cached["kompletny"] and cached["metadane"].get("wersja_urzedowa_pl") is True:
             part = stronicuj(cached["tekst"], strona)
             return {"status": "znaleziony", "identyfikator": "celex:" + key + ":pl",
