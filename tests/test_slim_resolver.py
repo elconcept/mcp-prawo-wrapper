@@ -5,6 +5,14 @@ import pytest
 
 from prawo_pl_mcp import slim_resolver as s
 
+@pytest.fixture(autouse=True)
+def izoluj_stan_testow(tmp_path, monkeypatch):
+    """Każdy test ma pusty cache; nie dotyka bazy produkcyjnej ani sąsiadów."""
+    monkeypatch.setenv("PRAWO_RESOLVER_CACHE", str(tmp_path / "resolver.sqlite"))
+    monkeypatch.delenv("PRAWO_USTAWY_SQLITE", raising=False)
+    monkeypatch.delenv("PRAWO_EU_PL_SQLITE", raising=False)
+
+
 
 @pytest.mark.parametrize(("raw", "expected"), [
     ("eli:DU/2024/917", ("eli", "DU/2024/917", None)),
