@@ -182,11 +182,15 @@ async def fetch_eli_pdf(eli: str, artykul: str, na_dzien: str | None = None) -> 
     Działa tylko dla konkretnego artykułu. Przy niejednoznaczności nie
     przyznaje statusu wierności i nie dostarcza tekstu do publicznego cache.
     """
+    if na_dzien is not None:
+        return {"status": "brak_zweryfikowanego_brzmienia_na_dzien",
+                "identyfikator": "eli:" + str(eli), "dokument_pelny": False,
+                "artykul_kompletny": False, "tekst": "",
+                "uwaga": "Worker nie rozwiązuje wersji historycznych tekstów ELI."}
     async with SEM:
         try:
             return await asyncio.to_thread(
-                przeanalizuj_pdf_eli, eli, artykul, str(OUT / "verified"),
-                na_dzien=na_dzien
+                przeanalizuj_pdf_eli, eli, artykul, str(OUT / "verified")
             )
         except Exception as exc:
             return {"status": "błąd_źródła", "identyfikator": "eli:" + str(eli),
