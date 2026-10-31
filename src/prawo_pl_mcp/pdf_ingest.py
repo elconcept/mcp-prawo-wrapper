@@ -104,8 +104,17 @@ def ingest_verified_pdf(url: str, *, source: str, identity: str,
         tmp.write(text)
         tmp_path = tmp.name
     os.replace(tmp_path, target)
+    # Zachowaj również oryginalne bajty PDF do kontroli dowodowej / OCR.
+    pdf_digest = hashlib.sha256(blob).hexdigest()
+    target_pdf = directory_path / (pdf_digest + ".pdf")
+    with tempfile.NamedTemporaryFile(mode="wb", dir=directory_path,
+                                     prefix=".pdf_inprogress_", delete=False) as tmp_pdf:
+        tmp_pdf.write(blob)
+        pdf_tmp = tmp_pdf.name
+    os.replace(pdf_tmp, target_pdf)
     return {"status": "zweryfikowany_tekst_zapisany",
             "artifact_file": target.name,
+            "artifact_pdf": target_pdf.name, "pdf_sha256": pdf_digest,
             "artifact_sha256": digest,
             "liczba_znakow": len(text), "strony_pdf": pages,
             "adres_pdf": url, "dokument_pelny": True,
