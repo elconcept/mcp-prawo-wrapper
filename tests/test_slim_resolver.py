@@ -147,7 +147,7 @@ async def test_celex_z_lokalnego_polskiego_korpusu_bez_przegladarki(monkeypatch)
 
 
 @pytest.mark.asyncio
-async def test_weryfikowany_browser_pdf_trafia_do_local_cache(monkeypatch):
+async def test_webwright_pdf_bez_zaufanego_parsera_nie_trafia_do_local_cache(monkeypatch):
     digest = "a" * 64
     candidate = {
         "status": "zweryfikowany_tekst_zapisany",
@@ -163,6 +163,5 @@ async def test_weryfikowany_browser_pdf_trafia_do_local_cache(monkeypatch):
         return True
     monkeypatch.setattr(s, "save_cache", save)
     result = await s._promuj_pdf(candidate, "celex:32016R0679:pl", "celex", 1, "33")
-    assert result["zapisano_lokalnie"] is True
-    assert stored[0][0][0] == "celex:32016R0679:pl"
-    assert stored[0][1]["metadane"]["wersja_urzedowa_pl"] is True
+    assert result is None
+    assert stored == []
