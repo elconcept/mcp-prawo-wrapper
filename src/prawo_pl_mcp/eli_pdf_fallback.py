@@ -89,7 +89,7 @@ async def fetch_eli_pdf_article(eli: str, article: str, page: int,
     raw = result.get("raport")
     if (result.get("status") != "wierny_odczyt_artykulu_z_pdf"
             or result.get("identyfikator") != expected_id
-            or result.get("artykul") != key.split("#art:")[1]
+            or result.get("artykul") != key.split("#art:")[1].split("#day:")[0]
             or result.get("artykul_kompletny") is not True
             or result.get("dokument_pelny") is not False
             or not isinstance(raw, dict)
