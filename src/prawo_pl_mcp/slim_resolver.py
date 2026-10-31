@@ -292,7 +292,9 @@ async def _eli(eli: str, strona: int, artykul: str | None = None) -> dict:
                 "adres_urzedowy": cached["adres_zrodlowy"],
                 "pobrano_at": cached["pobrano_at"], "sha256": cached["sha256"],
                 "pochodzenie": "lokalny_cache", "strona": strona,
-                "dokument_pelny": True} | part
+                "dokument_pelny": False,
+                "kompletnosc": "tekst_HTML_bez_gwarancji_zalacznikow",
+                "aktualnosc_prawna": "niezweryfikowana"} | part
 
     # WYŁĄCZNIE FALLBACK: oficjalne ELI API.
     try:
@@ -347,7 +349,9 @@ async def _eli(eli: str, strona: int, artykul: str | None = None) -> dict:
         "sha256": __import__("hashlib").sha256(text.encode("utf-8")).hexdigest(),
         "format_tekstu": "tekst wyodrębniony z urzędowego HTML (układ może się różnić)",
         "adres_html": base + "/text.html",
-        "dokument_pelny": not fragment["dalszy_fragment"] and strona == 1,
+        "dokument_pelny": False,
+        "kompletnosc": "tekst_HTML_bez_gwarancji_zalacznikow",
+        "aktualnosc_prawna": "niezweryfikowana",
     }
 
 
@@ -514,7 +518,7 @@ async def pobierz_dokument(
         promoted = await _promuj_pdf(candidate, "celex:" + key + ":pl", "celex", strona, article)
         if promoted:
             return promoted
-        if candidate.get("status") == "kandydat_zapisany":
+        if candidate.get("status") in ("kandydat_zapisany", "kandydat_pdf_zapisany"):
             try:
                 await asyncio.to_thread(record_candidate, "celex:" + key + ":pl", candidate)
             except (OSError, ValueError):
@@ -589,7 +593,7 @@ async def pobierz_dokument(
             promoted = await _promuj_pdf(candidate, kind + ":" + key, "sn", strona)
             if promoted:
                 return promoted
-            if candidate.get("status") == "kandydat_zapisany":
+            if candidate.get("status") in ("kandydat_zapisany", "kandydat_pdf_zapisany"):
                 try:
                     await asyncio.to_thread(record_candidate, kind + ":" + key, candidate)
                 except (OSError, ValueError):
