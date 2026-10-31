@@ -97,3 +97,50 @@ Wynik — ustrukturyzowany, np.:
 ## Zakaz zmian
 
 **REPERTORIUM — bez zmian w kodzie, kontenerze, proxy, politykach, wdrożeniu i bazie.** Zmierzone wyłącznie odpowiedzi z istniejącego MCP. Pozostałe kontenery nie zostały przełączone. Nie utożsamiać roboczej specyfikacji z działającym resolverem.
+
+
+## Aktualizacja 2026-10-31 — LOCAL-FIRST + Webwright MCP
+
+**Ważne: ta sekcja zastępuje wcześniejszy opis bezpośredniego pobierania ELI jako pierwszego kroku.** Dotychczasowy plan był API-first; obecna implementacja ma pierwszeństwo lokalne. Bez zmian w REPERTORIUM.
+
+### USTAWY: rzeczywista baza ma 37 aktów, a nie pełne archiwum Dz.U.
+
+Sprawdzone na uruchomionym MCP USTAWY: istnieje dokładne `DU/2024/917` (`uozp`, 74 artykuły), jak również 36 innych indeksowanych aktów. Działający kontener USTAWY ma **brak bind mountów** — SQLite znajduje się wewnątrz obrazu. Nie wymagać kopiowania DB jako warunku uruchomienia resolvera.
+
+NOWA ścieżka dla `eli:DU/2024/917`:
+1. Jeżeli operator dobrowolnie skonfiguruje `PRAWO_USTAWY_SQLITE` read-only, czytaj bezpośrednio po ELI z lokalnego indeksu.
+2. W przeciwnym razie wywołaj **lokalny serwer USTAWY** `akt_po_eli(eli,offset,limit,art)` z osobnego draft PR [grounding-prawo #81](https://github.com/elconcept/grounding-prawo/pull/81). Do chwili jego wdrożenia dla konkretnych artykułów możliwe jest użycie dotychczasowych `akty` i `artykul`.
+3. Sprawdź trwały cache resolvera `PRAWO_RESOLVER_CACHE` z sumą SHA-256.
+4. **Wyłącznie jeżeli powyższe nie pokrywa żądanego tekstu**, zapytaj oficjalne API Sejmu ELI i po prawidłowej odpowiedzi zapisz tekst/metadane/źródło/SHA-256 w trwałym SQLite resolvera.
+
+Uwagi: `akt_po_eli` zwraca wszystkie **zaindeksowane artykuły**, ale nie pełny PDF publikacji (może brakować załączników); `dokument_pelny=false` ma pozostać. Nie utożsamiaj numeru tekstu jednolitego z każdą późniejszą nowelizacją. Nie promuj do pełnego cache samego snippetu ani urwanej strony.
+
+### SAOS / NSA: nie duplikować mirrorów
+
+SAOS ma własny lokalny mirror z mechanizmem oficjalnego API jako fallback. Resolver najpierw wykorzystuje lokalne zapisane fragmenty, a następnie deleguje `get_judgment` do źródłowego MCP. Tylko fragment z metadanymi `offset`, `totalLength`, `returnedLength`, `nextOffset`, `hasMore` może zostać zapisany do trwałej tabeli `fragments` cache resolvera. W razie braku metadanych status `niezweryfikowana_kompletność`; nie przechowuj tego jako pełny wyrok. NSA nie ma potwierdzonego lokalnego mirrora na poziomie SAOS.
+
+### CELEX i ECLI po polsku
+
+1. `PRAWO_EU_PL_SQLITE`: lokalny zbiór **urzędowych polskich tekstów**, format `documents` z flagą `wersja_urzedowa_pl=true`.
+2. Lokalny trwały cache `PRAWO_RESOLVER_CACHE`, weryfikacja SHA-256 i flagi oficjalnej wersji PL.
+3. CELEX: opcjonalny wewnętrzny `webwright-legal-pl` MCP, uruchamia oryginalny skrypt autora w Playwright, zapisuje pliki i screenshots na NAS. **Wersja dostarczona przez autora pobiera całą stronę (również menu), a nie zweryfikowany tekst aktu, więc wynik ma status `kandydat_zapisany`, a nie pełen dokument.** Odrębny walidator urzędowego PDF/XML i utworzenie polskiego korpusu są blokującymi zadaniami P0.
+4. ECLI: jeżeli brak tekstu lokalnego, istniejący EU-SPARQL służy wyłącznie do odszukania metadanych/cytowań, które zapisujemy jako kandydata. **Pełny tekst ECLI PL jeszcze nie jest automatycznie materializowany** — nie podstawiać angielskiego korpusu.
+5. Nie traktować linku `/EN/TXT/` w wyniku Repertorium dla `celex:...:pl` jako źródła PL. Konstruować i następnie weryfikować `/PL/TXT/`.
+
+### Webwright: faktyczny zakres i bezpieczeństwo
+
+Dostarczony ZIP jest **skillem** z dwoma skryptami, nie gotowym serwerem MCP. Skrypty skopiowano z `matematicsolutions/awesome-matematic-skills-pl` rewizja `e99b534` do `vendor/webwright_legal_pl` wraz z licencją Apache-2.0; porównano skład z załączonym ZIP.
+
+Nowy `webwright_internal.py` udostępnia **wyłącznie w sieci prywatnej kontenerów** dwa narzędzia: `fetch_celex_pl` i `fetch_orzeczenie_po_sygnaturze`. Router modelowi ich nie wystawia. Uruchamia tylko dwie stałe komendy (bez `shell=True`), ogranicza czas, współbieżność i długość wejścia, zapisuje metadane/screeny. SN: wyniki z przeglądarki są **kandydatem**, dopóki nie pobrano/zweryfikowano pełnego PDF. **MS i TK nie są zaimplementowane** w oryginalnym skrypcie ani w aktualnym adapterze. Ich wdrożenie wymaga selektorów, testów integracyjnych i weryfikacji pełnych tekstów. Nie omijać CAPTCHA/WAF ani ograniczeń dostępu.
+
+Nowe pliki: `src/prawo_pl_mcp/{local_corpus.py,browser_bridge.py,webwright_internal.py,webwright_asgi.py}`, `vendor/webwright_legal_pl`, `deploy/minimal-legal/compose.staging.yaml` i `tests/test_local_corpus.py`. Brak wdrożenia na NAS. Staging resolver HTTP ma jeden tool `pobierz_dokument`; drugi widoczny tool to istniejące REPERTORIUM, które pozostaje niezmienione.
+
+### Zweryfikowane testy przed etapem staging
+
+- **Przeprowadzono** przez kontener Python na danych tymczasowych: odczyt USTAWY po dokładnym ELI, niezamienianie roczników, cache z SHA-256, fragmenty SAOS i candidate cache. PASS.
+- **Przeprowadzono** przez kontener Python: nowy `Baza.akt_po_eli` — dokładne ELI, offset/limit, out-of-scope, brak przypisywania pełnego urzędowego dokumentu. PASS.
+- **Nie przeprowadzono jeszcze** pełnego pytest, budowy obu nowych obrazów, próby browser w oficjalnych domenach ani próby MCP end-to-end przez Cloudflare. Traktować oba PR jako draft.
+
+### Odbiór
+
+Przed ukryciem narzędzi w `lex`: USTAWY #81 wdrożone jako źródło wewnętrzne; działający resolver z trwałym cache; walidacja braku wywołań API Sejmu przy trafieniach lokalnych; próby cache hit po restarcie; czytelne sygnały niekompletności; browser fallback SN oraz CELEX/PL sprawdzone na znanych dokumentach; później dopiero adaptery MS i TK. REPERTORIUM cały czas nietknięte.
