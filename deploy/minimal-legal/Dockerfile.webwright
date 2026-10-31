@@ -5,7 +5,7 @@ WORKDIR /app
 COPY pyproject.toml README.md LICENSE ./
 COPY src ./src
 COPY vendor/webwright_legal_pl ./vendor/webwright_legal_pl
-RUN python -m pip install --no-cache-dir ".[asgi]" "playwright==1.56.0"
+RUN python -m pip install --no-cache-dir ".[asgi]" "playwright==1.56.0" "pypdf>=5,<7"
 RUN mkdir -p /data/webwright && chmod -R 0770 /data
 EXPOSE 8000
 CMD ["uvicorn", "prawo_pl_mcp.webwright_asgi:app", "--host", "0.0.0.0", "--port", "8000"]
