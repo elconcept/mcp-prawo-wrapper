@@ -235,6 +235,7 @@ def save_fragment(identyfikator: str, offset: int, limit: int, tekst: str,
     next_offset = meta.get("nextOffset")
     if (type(total) is not int or type(returned) is not int or total < 0
             or returned < 0 or returned > limit or offset > total
+            or returned != len(tekst) or offset + returned > total
             or meta.get("offset") != offset
             or meta.get("hasMore") is not (offset + returned < total)):
         return False
