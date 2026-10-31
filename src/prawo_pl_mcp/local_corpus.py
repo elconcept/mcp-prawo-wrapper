@@ -249,13 +249,20 @@ def save_fragment(identyfikator: str, offset: int, limit: int, tekst: str,
     total = meta.get("totalLength")
     returned = meta.get("returnedLength")
     next_offset = meta.get("nextOffset")
-    if (type(total) is not int or type(returned) is not int or total < 0
+    if (type(offset) is not int or type(limit) is not int
+            or offset < 0 or limit <= 0 or type(total) is not int
+            or type(returned) is not int or total < 0
             or returned < 0 or returned > limit or offset > total
             or returned != len(tekst) or offset + returned > total
-            or meta.get("offset") != offset
-            or meta.get("hasMore") is not (offset + returned < total)):
+            or type(meta.get("offset")) is not int or meta["offset"] != offset):
         return False
-    if next_offset is not None and next_offset != offset + returned:
+    has_more = offset + returned < total
+    if meta.get("hasMore") is not has_more:
+        return False
+    # Natywna paginacja: przy niekońcowym fragmencie wymagany nextOffset,
+    # na końcu wymagane null. Inaczej cache może urwać dokument lub zapętlać.
+    expected_next = offset + returned if has_more else None
+    if next_offset != expected_next or (has_more and returned == 0):
         return False
     file = os.environ.get(CACHE_DB_ENV, DEFAULT_CACHE)
     with _WRITE_LOCK:
