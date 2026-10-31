@@ -38,6 +38,13 @@ def _zapisz_niezmienny(folder: Path, data: bytes, extension: str) -> tuple[str, 
                                          suffix=extension, delete=False) as temp:
             temp.write(data)
             tmp = Path(temp.name)
+        # tempfile tworzy plik z mode 0600. Worker zapisuje jako root, a
+        # odrębny resolver uruchomiony pod UID 1029 czyta wspólny
+        # katalog wyłącznie read-only. Urzędowe akty i ich ekstrakty
+        # mogą być odczytywane przez ten serwis bez prawa zapisu.
+        # Nadaj mode przed atomowym rename (nie ma okna z nieczytelnym
+        # docelowym artefaktem).
+        tmp.chmod(0o644)
         tmp.replace(file)
     if hashlib.sha256(file.read_bytes()).hexdigest() != digest:
         raise ValueError("Naruszona integralność artefaktu")
