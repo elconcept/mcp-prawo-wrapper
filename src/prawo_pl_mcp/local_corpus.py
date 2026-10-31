@@ -51,6 +51,25 @@ def _init(conn: sqlite3.Connection) -> None:
         PRIMARY KEY(identyfikator, jezyk)
       );
       CREATE INDEX IF NOT EXISTS idx_documents_fetched ON documents(pobrano_at);
+      CREATE TABLE IF NOT EXISTS fragments (
+        identyfikator TEXT NOT NULL,
+        offset INTEGER NOT NULL CHECK(offset>=0),
+        limit_znakow INTEGER NOT NULL CHECK(limit_znakow>0),
+        tekst TEXT NOT NULL,
+        sha256 TEXT NOT NULL,
+        total_length INTEGER NOT NULL CHECK(total_length>=0),
+        returned_length INTEGER NOT NULL CHECK(returned_length>=0),
+        next_offset INTEGER,
+        citations_json TEXT NOT NULL,
+        pobrano_at TEXT NOT NULL,
+        PRIMARY KEY(identyfikator, offset, limit_znakow)
+      );
+      CREATE TABLE IF NOT EXISTS candidates (
+        identyfikator TEXT PRIMARY KEY,
+        status TEXT NOT NULL,
+        metadane_json TEXT NOT NULL,
+        pobrano_at TEXT NOT NULL
+      );
     """)
 
 
@@ -178,3 +197,74 @@ def read_eu_pl(celex: str, artykul: str | None = None) -> dict | None:
     if row and row["kompletny"] and row["metadane"].get("wersja_urzedowa_pl") is True:
         return row | {"tryb": "eu_pl_sqlite"}
     return None
+
+
+def read_fragment(identyfikator: str, offset: int, limit: int) -> dict | None:
+    file = os.environ.get(CACHE_DB_ENV, DEFAULT_CACHE)
+    if not Path(file).is_file():
+        return None
+    with _connection(file, read_only=True) as conn:
+        try:
+            row = conn.execute(
+                "SELECT * FROM fragments WHERE identyfikator=? AND offset=? AND limit_znakow=?",
+                (identyfikator, offset, limit),
+            ).fetchone()
+        except sqlite3.OperationalError:
+            return None
+    if row is None:
+        return None
+    obj = dict(row)
+    if hashlib.sha256(obj["tekst"].encode()).hexdigest() != obj["sha256"]:
+        return None
+    obj["citations"] = json.loads(obj.pop("citations_json"))
+    return obj
+
+
+def save_fragment(identyfikator: str, offset: int, limit: int, tekst: str,
+                  meta: dict) -> bool:
+    """Zapis pojedynczego potwierdzonego fragmentu, bez fałszywego 'dokument_pelny'."""
+    total = meta.get("totalLength")
+    returned = meta.get("returnedLength")
+    next_offset = meta.get("nextOffset")
+    if (type(total) is not int or type(returned) is not int or total < 0
+            or returned < 0 or returned > limit or offset > total
+            or meta.get("offset") != offset
+            or meta.get("hasMore") is not (offset + returned < total)):
+        return False
+    if next_offset is not None and next_offset != offset + returned:
+        return False
+    file = os.environ.get(CACHE_DB_ENV, DEFAULT_CACHE)
+    with _WRITE_LOCK:
+        with _connection(file) as conn:
+            _init(conn)
+            conn.execute(
+                """INSERT INTO fragments
+                   (identyfikator,offset,limit_znakow,tekst,sha256,
+                    total_length,returned_length,next_offset,citations_json,pobrano_at)
+                   VALUES (?,?,?,?,?,?,?,?,?,?)
+                   ON CONFLICT(identyfikator,offset,limit_znakow) DO UPDATE SET
+                    tekst=excluded.tekst,sha256=excluded.sha256,
+                    total_length=excluded.total_length,returned_length=excluded.returned_length,
+                    next_offset=excluded.next_offset,citations_json=excluded.citations_json,
+                    pobrano_at=excluded.pobrano_at""",
+                (identyfikator,offset,limit,tekst,hashlib.sha256(tekst.encode()).hexdigest(),
+                 total,returned,next_offset,
+                 json.dumps(meta.get("citations", []), ensure_ascii=False),_utc()),
+            )
+    return True
+
+
+def record_candidate(identyfikator: str, data: dict) -> None:
+    """Zachowaj wynik przeglądarki jako dowód próby, nigdy jako urzędowy tekst."""
+    file = os.environ.get(CACHE_DB_ENV, DEFAULT_CACHE)
+    with _WRITE_LOCK:
+        with _connection(file) as conn:
+            _init(conn)
+            conn.execute(
+                """INSERT INTO candidates VALUES (?,?,?,?)
+                ON CONFLICT(identyfikator) DO UPDATE SET
+                status=excluded.status,metadane_json=excluded.metadane_json,
+                pobrano_at=excluded.pobrano_at""",
+                (identyfikator,str(data.get("status") or "nieznany"),
+                 json.dumps(data, ensure_ascii=False, default=str),_utc()),
+            )
