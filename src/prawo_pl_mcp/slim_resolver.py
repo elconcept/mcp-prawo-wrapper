@@ -23,6 +23,7 @@ from .local_corpus import (read_cache, read_eu_pl, read_ustawy, save_cache,
                            read_fragment, save_fragment, record_candidate, load_verified_artifact)
 from .browser_bridge import browser_fallback
 from .eli_pdf_fallback import cached_eli_pdf_article, fetch_eli_pdf_article
+from .native_judgment_text import extract_native_judgment_text
 
 PAGE_CHARS = 5000
 MAX_HTML_BYTES = 4_000_000
@@ -409,28 +410,19 @@ async def _orzeczenie(kind: str, value: str, strona: int) -> dict:
     body = response.get("text") or ""
     total = metadata.get("totalLength")
     has_more = metadata.get("hasMore")
-    returned = metadata.get("returnedLength")
-    next_offset = metadata.get("nextOffset")
     is_error = response.get("is_error", False)
-    # Metadane długości nie gwarantują, że source MCP przesłał TEKST,
-    # szczególnie gdy pośrednik przenosi jedynie citations. Zaufanie
-    # wymaga dokładnie jednego, ciągłego fragmentu o spodziewanej długości.
-    verified = (
-        not is_error
-        and type(total) is int and total >= offset
-        and type(returned) is int
-        and returned == min(PAGE_CHARS, total - offset)
-        and len(body) == returned
-        and metadata.get("offset") == offset
-        and type(has_more) is bool
-        and has_more == (offset + returned < total)
-        and next_offset == offset + returned
-    )
+    # Surowy SAOS 1.5.0 oddaje zakres w opakowanym content.text,
+    # a metadane osobno w structuredContent. Wydziel dokładnie
+    # returnedLength znaków, sprawdzając zakres i identyfikator.
+    fragment = (extract_native_judgment_text(
+        kind, value, body, metadata, offset=offset, limit=PAGE_CHARS
+    ) if not is_error else None)
+    verified = fragment is not None
     cached = False
     if verified:
         try:
             cached = await asyncio.to_thread(
-                save_fragment, ident, offset, PAGE_CHARS, body, metadata
+                save_fragment, ident, offset, PAGE_CHARS, fragment, metadata
             )
         except Exception:
             cached = False
@@ -442,7 +434,7 @@ async def _orzeczenie(kind: str, value: str, strona: int) -> dict:
         "zapisano_fragment_lokalnie": cached,
         "zrodlo": "SAOS" if kind == "saos" else "CBOSA",
         "adres_urzedowy": base,
-        "tekst": body if verified else "",
+        "tekst": fragment if verified else "",
         "strona": strona,
         "dalszy_fragment": has_more if verified else None,
         "kolejna_strona": (strona + 1 if has_more else None) if verified else None,
