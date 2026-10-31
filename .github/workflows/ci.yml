@@ -8,7 +8,10 @@ name: ci
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
+      - feat/minimalny-resolver-repertorium-20261031
+      - fix/upstream-native-pagination-20261031
   pull_request:
 
 permissions:
