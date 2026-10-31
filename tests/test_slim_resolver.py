@@ -211,7 +211,7 @@ async def test_krs_uses_exact_native_tool_and_does_not_claim_full_extract(monkey
                     "structured": {}, "is_error": False}
     monkeypatch.setattr(s, "POOL", FakePool())
     r = await s.pobierz_dokument("krs:28860")
-    assert r["status"] == "znaleziony"
+    assert r["status"] == "odczyt_backendu_niezweryfikowany"
     assert r["dokument_pelny"] is False
     assert r["kompletnosc"] == "niezweryfikowana"
     assert r["pochodzenie"] == "backend_bez_zapisu_do_cache"
@@ -227,7 +227,7 @@ async def test_uodo_native_id_does_not_require_semantic_search(monkeypatch):
                 "sentencja": "Decyzja", "uzasadnienie": "Treść"}}, "is_error": False}
     monkeypatch.setattr(s, "POOL", FakePool())
     r = await s.pobierz_dokument("uodo:PublicDocument-20260407-000000-000-abc123")
-    assert r["status"] == "znaleziony"
+    assert r["status"] == "odczyt_backendu_niezweryfikowany"
     assert "uzasadnienie" in r["tekst"]
     assert r["dokument_pelny"] is False
 
