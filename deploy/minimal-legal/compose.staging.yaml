@@ -18,6 +18,7 @@ services:
       - PRAWO_EU_PL_SQLITE=/data/eu-pl.sqlite
       - PRAWO_RESOLVER_CACHE=/data/prawo-resolver.sqlite
       - PRAWO_WEBWRIGHT_MCP_URL=http://webwright:8000/mcp
+      - PRAWO_WEBWRIGHT_ARTIFACTS=/data/webwright/verified
     volumes:
       - resolver-data:/data
       - webwright-data:/data/webwright:ro
