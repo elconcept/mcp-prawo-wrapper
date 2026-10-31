@@ -144,7 +144,7 @@ def read_ustawy(eli: str, artykul: str | None = None,
                 path: str | None = None) -> dict | None:
     """Bezpośredni lokalny odczyt 37 aktów USTAWY, bez zapytań sieciowych.
 
-    Baza mcp-ustawy jest tylko do odczytu. \`eli\` jest ściśle porównywany,
+    Baza mcp-ustawy jest tylko do odczytu. `eli` jest ściśle porównywany,
     więc inny tekst jednolity nie zostanie omyłkowo zwrócony jako żądana wersja.
     """
     file = path or os.environ.get(USTAWY_DB_ENV)
