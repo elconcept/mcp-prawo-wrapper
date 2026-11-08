@@ -8,7 +8,7 @@ services:
     user: "1029:100"
     environment:
       TZ: Europe/Warsaw
-      PRAWO_PL_MCP_SOURCES: "repertorium,saos,nsa,isap,krs,kio,uodo,pmi"
+      PRAWO_PL_MCP_SOURCES: "repertorium,saos,nsa,isap,krs,kio,uodo,pmi,eu-sparql"
       PRAWO_PL_MCP_URL_REPERTORIUM: "http://mcp-repertorium:8000/mcp"
       PRAWO_PL_MCP_URL_SAOS: "http://mcp-saos:8000/mcp"
       PRAWO_PL_MCP_URL_NSA: "http://mcp-nsa:8000/mcp"
@@ -17,6 +17,7 @@ services:
       PRAWO_PL_MCP_URL_KIO: "http://mcp-kio:8000/mcp"
       PRAWO_PL_MCP_URL_PMI: "http://pmi:8000/mcp"
       PRAWO_PL_MCP_URL_UODO: "http://mcp-uodo:3000/mcp"
+      PRAWO_PL_MCP_URL_EU_SPARQL: "http://mcp-eu-sparql:8000/mcp"
       PRAWO_DB_HOST: "prawo-vector-db"
       PRAWO_DB_NAME: "prawo"
       PRAWO_DB_USER: "prawo"
@@ -31,6 +32,7 @@ services:
       - isap
       - krs
       - repertorium
+      - eu_sparql
       - uodo
     ports:
       - "8420:8000"
@@ -63,3 +65,6 @@ networks:
   uodo:
     external: true
     name: cf_mcp_uodo
+  eu_sparql:
+    external: true
+    name: cf_mcp_eu_sparql
