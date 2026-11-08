@@ -338,6 +338,27 @@ SOURCES: dict[str, Source] = {
             "Reform timeline via pl_call tool=legalize_list_reforms.",
         ),
         Source(
+            id="pmi",
+            name="PrawMi public HTML (rulings, statutes, articles)",
+            coverage="Public prawmi.pl/orzeczenie and prawmi.pl/ustawa pages: exact ruling signatures, indexed statute titles and article/full-act text.",
+            group="pl",
+            runtime="http",
+            package="pmi-orzeczenia",
+            search=SearchSpec(
+                tool="pmi_search",
+                query_param="query",
+                size_param="limit",
+                size_max=30,
+            ),
+            get=GetSpec(
+                tool="pmi_get_document",
+                id_param="document_id",
+                id_hint="ruling:xii-ko-26-23, act:kodeks-postepowania-karnego, article:ochronie-zdrowia-psychicznego:art-23",
+            ),
+            native_tools=("pmi_search", "pmi_get_document", "pmi_get_article", "pmi_list_acts"),
+            notes="Statute title search, known-signature ruling lookup and exact article retrieval. For semantic search use free Repertorium.",
+        ),
+        Source(
             id="repertorium",
             name="Repertorium - free public semantic search (Poland only)",
             coverage="Semantic discovery over public Polish legal corpus; returns snippets and source IDs, not paid full text.",

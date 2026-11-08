@@ -17,14 +17,14 @@ import psycopg
 from bs4 import BeautifulSoup
 
 SAOS_DUMP = "/saos/saos.sqlite"
-KNOWN = {"saos", "nsa", "uodo", "kio", "isap"}
+KNOWN = {"saos", "nsa", "uodo", "kio", "isap", "pmi"}
 
 
 def route(source: str, document_id: str) -> tuple[str, str]:
     if source in ("auto", "repertorium"):
         prefix, sep, value = document_id.partition(":")
         if not sep:
-            raise ValueError("Auto resolver requires source-prefixed ID: saos:..., nsa:..., kio:..., uodo:..., eli:...")
+            raise ValueError("Auto resolver requires source-prefixed ID: saos:..., nsa:..., kio:..., uodo:..., eli:..., pmi:...")
         source = "isap" if prefix == "eli" else prefix
         if source not in KNOWN:
             raise ValueError(f"No full-text resolver for source '{prefix}'")
@@ -133,8 +133,8 @@ async def resolve_uodo_id(source, document_id: str, call) -> str:
 
 
 def text_from_connector(raw: str, source: str) -> str:
-    """Unwrap KIO's structured JSON, leaving other native full texts intact."""
-    if source == "kio":
+    """Unwrap structured full-text responses from KIO and PrawMi HTML."""
+    if source in ("kio", "pmi"):
         try:
             obj = json.loads(raw)
             if isinstance(obj, dict) and isinstance(obj.get("content_text"), str):
@@ -170,3 +170,20 @@ async def read_eli_pdf(eli: str) -> str | None:
         return await asyncio.to_thread(_read_eli_pdf_sync, eli)
     except (OSError, ValueError, RuntimeError):
         return None
+
+
+def pmi_source_url(document_id: str) -> str | None:
+    """Construct a source citation URL from the canonical PrawMi document ID."""
+    identifier = document_id.removeprefix("pmi:")
+    kind, sep, suffix = identifier.partition(":")
+    if not sep:
+        return None
+    if kind == "ruling":
+        return "https://prawmi.pl/orzeczenie/" + suffix
+    if kind == "act":
+        return "https://prawmi.pl/ustawa/" + suffix
+    if kind == "article":
+        slug, sep2, article = suffix.partition(":")
+        if sep2:
+            return "https://prawmi.pl/ustawa/" + slug + "/" + article
+    return None

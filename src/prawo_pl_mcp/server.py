@@ -435,6 +435,8 @@ async def pl_get_document(
 
     out["source"] = s.id
     out["document_id"] = key
+    if s.id == "pmi":
+        out["source_url"] = local_docs.pmi_source_url(key)
     out["complete"] = not local_docs.looks_truncated(text)
     out["origin"] = "postgres" if from_cache else local_origin or "connector"
     _audited(

@@ -15,3 +15,8 @@ def test_uodo_urn():
 def test_truncated_nsa():
     assert looks_truncated("[...] Skrocono. Pelna tresc: https://orzeczenia.nsa.gov.pl/")
     assert not looks_truncated("Pelna tresc orzeczenia")
+
+
+def test_auto_pmi():
+    assert route("auto", "pmi:article:ochronie-zdrowia-psychicznego:art-23") == ("pmi", "article:ochronie-zdrowia-psychicznego:art-23")
+    assert cache_id("pmi", "ruling:xii-ko-26-23") == "pmi:ruling:xii-ko-26-23"
