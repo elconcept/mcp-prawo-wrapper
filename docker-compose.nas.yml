@@ -1,0 +1,65 @@
+services:
+  mcp-prawo-wrapper:
+    build:
+      context: /volume2/docker/mcp-prawo-wrapper
+      dockerfile: Dockerfile.nas
+    image: mcp-prawo-wrapper:local
+    container_name: mcp-prawo-wrapper
+    user: "1029:100"
+    environment:
+      TZ: Europe/Warsaw
+      PRAWO_PL_MCP_SOURCES: "repertorium,saos,nsa,isap,krs,kio,uodo,pmi"
+      PRAWO_PL_MCP_URL_REPERTORIUM: "http://mcp-repertorium:8000/mcp"
+      PRAWO_PL_MCP_URL_SAOS: "http://mcp-saos:8000/mcp"
+      PRAWO_PL_MCP_URL_NSA: "http://mcp-nsa:8000/mcp"
+      PRAWO_PL_MCP_URL_ISAP: "http://mcp-isap:8000/mcp"
+      PRAWO_PL_MCP_URL_KRS: "http://mcp-krs:8000/mcp"
+      PRAWO_PL_MCP_URL_KIO: "http://mcp-kio:8000/mcp"
+      PRAWO_PL_MCP_URL_PMI: "http://pmi:8000/mcp"
+      PRAWO_PL_MCP_URL_UODO: "http://mcp-uodo:3000/mcp"
+      PRAWO_DB_HOST: "prawo-vector-db"
+      PRAWO_DB_NAME: "prawo"
+      PRAWO_DB_USER: "prawo"
+      PRAWO_DB_PASSWORD_FILE: "/run/secrets/db_password"
+    volumes:
+      - /volume2/docker/mcp-saos/data:/saos:ro
+      - /volume2/docker/prawo-vector-db/postgres_password:/run/secrets/db_password:ro
+    networks:
+      - prawo_private
+      - saos
+      - nsa
+      - isap
+      - krs
+      - repertorium
+      - uodo
+    ports:
+      - "8420:8000"
+    healthcheck:
+      test: ["CMD","python","-c","import socket; socket.create_connection(('127.0.0.1',8000),timeout=5).close()"]
+      interval: 30s
+      timeout: 7s
+      retries: 5
+    restart: unless-stopped
+
+networks:
+  prawo_private:
+    external: true
+    name: mcp_prawo_private
+  saos:
+    external: true
+    name: cf_mcp_saos
+  nsa:
+    external: true
+    name: cf_mcp_nsa
+  isap:
+    external: true
+    name: cf_mcp_isap
+  krs:
+    external: true
+    name: cf_mcp_krs
+  repertorium:
+    external: true
+    name: cf_mcp_repertorium
+  uodo:
+    external: true
+    name: cf_mcp_uodo

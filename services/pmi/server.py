@@ -17,7 +17,7 @@ BASE = "https://prawmi.pl"
 INDEX_URL = BASE + "/ustawa"
 RULING_BASE = BASE + "/orzeczenie/"
 ACT_BASE = BASE + "/ustawa/"
-USER_AGENT = "pmi-orzeczenia-personal-mcp/1.0"
+USER_AGENT = "pmi-personal-mcp/1.0"
 HEADERS = {"User-Agent": USER_AGENT, "Accept": "text/html"}
 ACT_SLUG = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 ARTICLE_ID = re.compile(r"^art-[0-9]+[a-z]?(?:-[a-z])?$")
@@ -29,7 +29,7 @@ _index_at = 0.0
 _index_lock = asyncio.Lock()
 
 mcp = FastMCP(
-    "pmi-orzeczenia",
+    "pmi",
     instructions=(
         "Independent reader of public HTML at prawmi.pl. Free and without API keys. "
         "pmi_search searches the indexed titles of statutes and resolves exact ruling signatures. "

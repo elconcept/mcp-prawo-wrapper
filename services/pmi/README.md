@@ -1,4 +1,4 @@
-# pmi-orzeczenia
+# pmi
 
 Personal, independent public-HTML connector for https://prawmi.pl.
 
@@ -18,7 +18,7 @@ it over the cf_mcp_krs Docker network.
 - pmi_list_acts(query="", limit=100): list index, cached 1 hour.
 
 The wrapper continues to expose five public unified tools. The pmi
-source uses PRAWO_PL_MCP_URL_PMI=http://pmi-orzeczenia:8000/mcp;
+source uses PRAWO_PL_MCP_URL_PMI=http://pmi:8000/mcp;
 pl_search(source="pmi") and pl_get_document(source="auto",
 document_id="pmi:article:...") act as ordinary wrapper calls.
 
@@ -37,4 +37,4 @@ Run self-contained parser tests:
 
     python -m unittest -q test_server.py
 
-Portainer stack: pmi-orzeczenia, separate from mcp-prawo-wrapper.
+Portainer stack: pmi, separate from mcp-prawo-wrapper.

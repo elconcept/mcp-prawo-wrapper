@@ -5,7 +5,7 @@ from server import mcp
 
 
 async def healthz(_: Request) -> JSONResponse:
-    return JSONResponse({"status": "ok", "service": "pmi-orzeczenia"})
+    return JSONResponse({"status": "ok", "service": "pmi"})
 
 
 app = mcp.http_app()

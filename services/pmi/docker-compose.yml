@@ -1,10 +1,10 @@
 services:
-  pmi-orzeczenia:
+  pmi:
     build:
-      context: /volume2/docker/mcp-prawo-wrapper/services/pmi-orzeczenia
+      context: /volume2/docker/mcp-prawo-wrapper/services/pmi
       dockerfile: Dockerfile
-    image: pmi-orzeczenia:local
-    container_name: pmi-orzeczenia
+    image: pmi:local
+    container_name: pmi
     user: "1029:100"
     environment:
       TZ: Europe/Warsaw
