@@ -20,6 +20,9 @@ classifiers = [
 ]
 dependencies = [
     "fastmcp>=3.4,<4",
+    "psycopg[binary]>=3.2,<4",
+    "beautifulsoup4>=4.12,<5",
+    "pypdf>=6,<8",
 ]
 
 [project.optional-dependencies]

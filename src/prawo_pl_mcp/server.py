@@ -13,6 +13,9 @@ import asyncio
 import json
 import time
 from typing import Any
+import re
+
+from . import local_docs
 
 from fastmcp import FastMCP
 from mcp.types import ToolAnnotations
@@ -279,7 +282,7 @@ async def pl_list_sources(source_id: str | None = None, group: str | None = None
 
 
 async def pl_search(
-    source: str,
+    source: str = "repertorium",
     query: str | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
@@ -336,6 +339,8 @@ async def pl_search(
         args.setdefault(spec.date_to_param, date_to)
     if spec.page_param:
         args.setdefault(spec.page_param, page - 1 if spec.page_base == 0 else page)
+    if s.id == "uodo" and page > 1:
+        args.setdefault("from", (page - 1) * (limit or 10))
     if limit is not None and spec.size_param:
         clamped = limit
         if spec.size_max:
@@ -350,6 +355,8 @@ async def pl_search(
         _audited("pl_search", s.id, args, started, {}, error=exc.code)
         raise
     _audited("pl_search", s.id, args, started, {"chars": len(text)})
+    if s.id == "repertorium":
+        asyncio.create_task(_prefetch_repertorium_hits(text))
     return text
 
 
@@ -359,69 +366,94 @@ async def pl_get_document(
     page: int = 1,
     extra: dict | None = None,
     page_number: int | None = None,
+    refresh: bool = False,
 ) -> str:
-    """Fetch the full document (judgment, act text, register extract...) from a source.
+    """Read a source document, cache complete text in PostgreSQL, paginate for the model.
 
-    `document_id` format depends on the source - numeric id (saos), hex doc_id
-    (nsa), ELI (isap), KRS number (krs), signature (kio, uodo)... - see the
-    `document_id` field in pl_list_sources. Long documents are paginated at
-    ~5000 characters per page: response is JSON with `content`, `page`,
-    `total_pages`, `has_more` - iterate `page` while `has_more` (`page` is
-    1-based, exactly as in pl_search; `page_number` is a deprecated alias kept
-    for backward compatibility, and is echoed in the response for the same
-    reason). Sources that paginate the document themselves (isap) report
-    `pagination: "native"` and carry their own page footer inside `content`.
-    Some sources need `extra` (e.g. eu-compliance: {"regulation": "GDPR"}).
-
-    Errors: `unknown_source`, `invalid_arg` (missing required extra, page < 1,
-    conflicting page/page_number), `source_unavailable`, `upstream_error`
-    (e.g. connector's not_found - check the identifier or search first).
+    'auto' accepts IDs from free Repertorium: saos:ID, nsa:HEX, kio:ID,
+    uodo:URN and eli:DU/YEAR/POSITION. SAOS is read from the local SQLite dump
+    with no import of the bulk corpus. Native page-based sources keep their paging.
     """
     started = time.monotonic()
-    s = _resolve(source)
-    _otel_tag(s.id)
-    spec = s.get
     page = _resolve_page(page, page_number)
-
-    args: dict[str, Any] = dict(extra or {})
-    missing = [p for p in spec.required_extra if p not in args]
-    if missing:
-        raise PLLegalError(
-            "invalid_arg",
-            f"Source '{s.id}' document fetch requires extra={{{', '.join(repr(m) for m in missing)}: ...}}. "
-            f"Hint: {spec.id_hint}",
-        )
-    args.setdefault(spec.id_param, document_id)
-    if spec.page_param:
-        args.setdefault(spec.page_param, page)
-
     try:
-        text = await _proxy_call(s, spec.tool, args)
-    except PLLegalError as exc:
-        _audited("pl_get_document", s.id, args, started, {}, error=exc.code)
-        raise
+        resolved_source, native_id = local_docs.route(source, document_id)
+    except ValueError as exc:
+        raise PLLegalError("invalid_arg", str(exc)) from exc
 
-    if spec.page_param:
-        # Zrodlo juz wybralo strone. Drugie ciecie tutaj liczyloby strony JEDNEJ
-        # strony zrodla, wiec total_pages/has_more bylyby falszem - nie zgadujemy.
+    s = _resolve(resolved_source)
+    spec = s.get
+    key = local_docs.cache_id(s.id, str(native_id))
+    _otel_tag(s.id)
+    text = None if refresh else await local_docs.read_cached(key)
+    from_cache = text is not None
+    local_origin = None
+
+    if text is None and s.id == "saos":
+        text = await local_docs.read_saos_dump(str(native_id))
+        local_origin = "saos_dump" if text is not None else None
+    if text is None and s.id == "isap":
+        text = await local_docs.read_eli_pdf(str(native_id))
+        local_origin = "eli_pdf" if text is not None else None
+
+    if text is None:
+        args: dict[str, Any] = dict(extra or {})
+        missing = [p for p in spec.required_extra if p not in args]
+        if missing:
+            raise PLLegalError(
+                "invalid_arg", f"Source '{s.id}' document fetch requires extra {missing}. {spec.id_hint}"
+            )
+        if s.id == "uodo":
+            try:
+                native_id = await local_docs.resolve_uodo_id(s, str(native_id), POOL.call)
+            except SourceUnavailable as exc:
+                raise PLLegalError("source_unavailable", str(exc)) from exc
+        if s.id == "kio" and str(native_id).isdecimal():
+            native_id = int(native_id)
+        args.setdefault(spec.id_param, native_id)
+        if spec.page_param:
+            args.setdefault(spec.page_param, page)
+        try:
+            text = await _proxy_call(s, spec.tool, args)
+        except PLLegalError as exc:
+            _audited("pl_get_document", s.id, args, started, {}, error=exc.code)
+            raise
+        text = local_docs.text_from_connector(text, s.id)
+
+    if not from_cache and (not spec.page_param or local_origin) and not local_docs.looks_truncated(text):
+        await local_docs.save_cached(key, s.id, text)
+
+    if spec.page_param and not from_cache and not local_origin:
         out = {
-            "content": text,
-            "page": page,
-            "page_number": page,
-            "pagination": "native",
-            "total_chars": len(text),
+            "content": text, "page": page, "page_number": page,
+            "pagination": "native", "total_chars": len(text),
         }
     else:
         out = paginate(text, page)
         out["page"] = out["page_number"]
         out["pagination"] = "aggregator"
+
     out["source"] = s.id
-    out["document_id"] = document_id
+    out["document_id"] = key
+    out["complete"] = not local_docs.looks_truncated(text)
+    out["origin"] = "postgres" if from_cache else local_origin or "connector"
     _audited(
-        "pl_get_document", s.id, args, started,
-        {"total_chars": out["total_chars"], "page": out["page"]},
+        "pl_get_document", s.id, {"document_id": key, "page": page},
+        started, {"total_chars": out["total_chars"], "page": page, "origin": out["origin"]},
     )
     return json.dumps(out, ensure_ascii=False)
+
+
+async def _prefetch_repertorium_hits(search_text: str) -> None:
+    """Best effort: hydrate up to 3 source documents behind a search result."""
+    ids = list(dict.fromkeys(re.findall(
+        r"(?m)^\s*document_id: ((?:saos|kio|uodo):[^\s]+)", search_text,
+    )))[:3]
+    for identifier in ids:
+        try:
+            await pl_get_document("auto", identifier)
+        except Exception:
+            continue
 
 
 async def pl_call(

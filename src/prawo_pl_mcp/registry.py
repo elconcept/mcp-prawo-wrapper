@@ -226,36 +226,26 @@ SOURCES: dict[str, Source] = {
         ),
         Source(
             id="uodo",
-            name="UODO - Polish DPA decisions (GDPR enforcement)",
-            coverage="Decisions of the President of UODO from orzeczenia.uodo.gov.pl, "
-            "incl. fines, sectors, GDPR article index, aggregate stats.",
+            name="UODO - Polish DPA decisions",
+            coverage="Decisions from orzeczenia.uodo.gov.pl through the existing UODO MCP.",
             group="pl",
-            runtime="uvx",
-            package="uodo-orzeczenia-mcp",
+            runtime="http",
+            package="existing-uodo-mcp",
             search=SearchSpec(
-                tool="uodo_search",
-                query_param="keyword",
-                date_from_param="date_from",
-                date_to_param="date_to",
-                page_param="page",
-                page_base=1,
-                size_param="size",
+                tool="uodo_search_decisions",
+                query_param="query",
+                date_from_param="dateFrom",
+                date_to_param="dateTo",
+                size_param="count",
                 size_max=50,
             ),
             get=GetSpec(
                 tool="uodo_get_decision",
-                id_param="urn_or_signature",
-                id_hint="URN or signature, e.g. DKN.5131.16.2025",
+                id_param="id",
+                id_hint="PublicDocument-* from uodo_search_decisions; Repertorium URNs are resolved by the wrapper",
             ),
-            native_tools=(
-                "uodo_search",
-                "uodo_get_decision",
-                "uodo_recent",
-                "uodo_by_gdpr_article",
-                "uodo_stats",
-            ),
-            notes="Stats (fines, sectors) via pl_call tool=uodo_stats "
-            "(period_from/period_to required).",
+            native_tools=("uodo_search_decisions", "uodo_get_decision", "uodo_list_search_fields"),
+            notes="Current UODO MCP requires PublicDocument id for full text.",
         ),
         Source(
             id="eu-sparql",
@@ -346,6 +336,22 @@ SOURCES: dict[str, Source] = {
             ),
             notes="legalize_search_laws needs a GitHub token (code search). "
             "Reform timeline via pl_call tool=legalize_list_reforms.",
+        ),
+        Source(
+            id="repertorium",
+            name="Repertorium - free public semantic search (Poland only)",
+            coverage="Semantic discovery over public Polish legal corpus; returns snippets and source IDs, not paid full text.",
+            group="pl",
+            runtime="http",
+            package="existing-repertorium-mcp",
+            search=SearchSpec(tool="szukaj_repertorium", query_param="q"),
+            get=GetSpec(
+                tool="szukaj_repertorium",
+                id_param="q",
+                id_hint="Use pl_get_document(source='auto', document_id='saos:...', etc.) to fetch full official text",
+            ),
+            native_tools=("szukaj_repertorium",),
+            notes="Query only; jurisdiction is always hardcoded to pl at the source. Full texts come from official sources.",
         ),
     ]
 }
