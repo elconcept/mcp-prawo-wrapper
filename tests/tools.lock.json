@@ -1,5 +1,5 @@
 {
-  "package_version": "0.2.4",
+  "package_version": "0.3.0",
   "tools": {
     "pl_call": {
       "descriptor": {
@@ -208,7 +208,7 @@
           "openWorldHint": true,
           "readOnlyHint": true
         },
-        "description": "Fetch the full document (judgment, act text, register extract...) from a source.\n\n`document_id` format depends on the source - numeric id (saos), hex doc_id\n(nsa), ELI (isap), KRS number (krs), signature (kio, uodo)... - see the\n`document_id` field in pl_list_sources. Long documents are paginated at\n~5000 characters per page: response is JSON with `content`, `page`,\n`total_pages`, `has_more` - iterate `page` while `has_more` (`page` is\n1-based, exactly as in pl_search; `page_number` is a deprecated alias kept\nfor backward compatibility, and is echoed in the response for the same\nreason). Sources that paginate the document themselves (isap) report\n`pagination: \"native\"` and carry their own page footer inside `content`.\nSome sources need `extra` (e.g. eu-compliance: {\"regulation\": \"GDPR\"}).\n\nErrors: `unknown_source`, `invalid_arg` (missing required extra, page < 1,\nconflicting page/page_number), `source_unavailable`, `upstream_error`\n(e.g. connector's not_found - check the identifier or search first).",
+        "description": "Page the stored Markdown source or fetch a native MCP document on demand.\n\nsource='md' accepts md_file from pl_search. No PostgreSQL, local SAOS\nSQLite dump, or in-wrapper PDF extraction is used. For LEGAL-CITE supply\nthe concrete article citation, not the identifier of an entire act.\nCold conversion of a PDF by LEGAL-CITE may take ~90 seconds.",
         "inputSchema": {
           "additionalProperties": false,
           "properties": {
@@ -242,6 +242,10 @@
               ],
               "default": null
             },
+            "refresh": {
+              "default": false,
+              "type": "boolean"
+            },
             "source": {
               "type": "string"
             }
@@ -271,7 +275,7 @@
           "x-fastmcp-wrap-result": true
         }
       },
-      "sha256": "c008554e513298bf94c4840d63414a14edf1ae0dbcb5d6699808f78cb3c0ddcc"
+      "sha256": "fe3d505376712b6ffdfa5308d4eb7c717eda553b7768f25a9ffcd648f4e8496d"
     },
     "pl_list_sources": {
       "descriptor": {
@@ -337,7 +341,7 @@
           "destructiveHint": false,
           "idempotentHint": true,
           "openWorldHint": true,
-          "readOnlyHint": true
+          "readOnlyHint": false
         },
         "description": "Unified search across any registered source (SAOS, NSA, ISAP, EUREKA, KIO, UODO...).\n\nCommon parameters are translated to the source's native names (dateFrom vs\ndate_from, 0- vs 1-based pages - handled here; `page` is ALWAYS 1-based, and\nis the same parameter name in pl_get_document). `date_from`/`date_to`:\nYYYY-MM-DD. `limit`: results per page (clamped to the source maximum).\n`extra`: source-specific native filters merged verbatim (e.g.\n{\"courtType\": \"SUPREME\"} for saos, {\"country\": \"es\"} for legalize - the\nnative names are listed under `native_params` in pl_list_sources).\n`page_number` is a deprecated alias of `page`; prefer `page`.\n\nErrors: `unknown_source`, `invalid_arg` (source has no search tool, e.g. krs;\nmissing required extra; page < 1), `source_unavailable`, `upstream_error`\n(connector's own error code preserved in message).",
         "inputSchema": {
@@ -415,12 +419,10 @@
               "default": null
             },
             "source": {
+              "default": "repertorium",
               "type": "string"
             }
           },
-          "required": [
-            "source"
-          ],
           "type": "object"
         },
         "meta": {
@@ -442,8 +444,8 @@
           "x-fastmcp-wrap-result": true
         }
       },
-      "sha256": "157c82c766365b0b2acc64ce335124eb757b590506e9c5fbd70c1fdfbd0c71aa"
+      "sha256": "a2b1ac68f9b78d8b261388057eb9255b30365561e3525279c418caef3f8b8a1f"
     }
   },
-  "toolset_sha256": "aac1da04e1abd553265f919bb92f5edf7d5c32b110b94e054a277e322b950d42"
+  "toolset_sha256": "92d6bb0d407050c8b0973b08ba891e48117b8a01749ff180e5893117f41a96ce"
 }

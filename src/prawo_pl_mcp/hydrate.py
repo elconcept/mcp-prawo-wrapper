@@ -23,8 +23,8 @@ _SIG = re.compile(
 _ART = re.compile(r"\bart\.?\s*(\d+[a-z]?)\b", re.I)
 _PAR = re.compile(r"(?:^|\s)§\s*(\d+[a-z]?)\b", re.I)
 MAX_DOC_CHARS = 3_000_000
-PER_HIT_TIMEOUT = float(os.environ.get("PRAWO_HYDRATE_TIMEOUT", "190"))
-CONCURRENCY = int(os.environ.get("PRAWO_HYDRATE_CONCURRENCY", "4"))
+PER_HIT_TIMEOUT = float(os.environ.get("PRAWO_HYDRATE_TIMEOUT", "250"))
+CONCURRENCY = int(os.environ.get("PRAWO_HYDRATE_CONCURRENCY", "3"))
 
 
 def _fold(value: str) -> str:
@@ -54,10 +54,15 @@ def _decode(raw: str) -> tuple[str, dict]:
         raise LookupError(str(obj.get("error") or obj)[:260])
     if isinstance(obj.get("result"), dict):
         obj = obj["result"]
-    for key in ("content_text", "full_text", "textContent", "text"):
+    if obj.get("truncated") is True or obj.get("has_more") is True or obj.get("hasMore") is True:
+        raise LookupError("Source returned an incomplete/partial document")
+    if obj.get("total_pages", 1) not in (None, 1) and "page" in obj:
+        raise LookupError("Source paginated the text; all source pages must be collected")
+    for key in ("content_text", "full_text", "fullText", "textContent", "text",
+                "body", "content", "decisionText"):
         if isinstance(obj.get(key), str) and len(obj[key]) > 30:
             return obj[key], obj
-    return raw, obj
+    raise LookupError("Source returned metadata without confirmed document text")
 
 
 def _valid(content: str) -> str:
@@ -193,7 +198,7 @@ async def resolve(hit: dict, query: str, invoke: Invoke) -> tuple[str, str, str,
         content, status, mcp, tool = await _uodo(hit, native, invoke)
         return content, status, mcp, tool, ""
     if prefix == "pmi":
-        raw = await invoke("pmi", "pmi_get_document", {"document_id": identifier})
+        raw = await invoke("pmi", "pmi_get_document", {"document_id": native})
         content, obj = _decode(raw)
         kind = obj.get("kind")
         return _valid(content), ("article_only" if kind == "article" else "full"), "pmi", "pmi_get_document", ""
@@ -251,9 +256,9 @@ async def hydrate(payload: dict[str, Any], query: str, invoke: Invoke) -> dict[s
             try:
                 text, status, mcp, tool, selector = await asyncio.wait_for(
                     resolve(hit, query, invoke), timeout=PER_HIT_TIMEOUT)
-            except (Exception, asyncio.TimeoutError) as exc:
+            except Exception as exc:
                 reason = str(exc)[:240] or type(exc).__name__
-                if isinstance(exc, asyncio.TimeoutError):
+                if isinstance(exc, TimeoutError):
                     reason = ("Timeout źródła, w tym możliwa zimna konwersja PDF przez LEGAL-CITE. "
                               "Nie jest to dowód braku dokumentu; ponów pobranie.")
         warning = WARNING if status == "fragment_only" else None
@@ -266,6 +271,9 @@ async def hydrate(payload: dict[str, Any], query: str, invoke: Invoke) -> dict[s
             item["md_file"] = path
         except (OSError, ValueError) as exc:
             item["write_error"] = str(exc)[:250]
+            item["write_failed"] = True
+            item["user_disclosure_required"] = True
+            item["warning"] = "Nie zapisano odzyskanej treści źródłowej do Markdown; brak md_file."
         item["fulltext_status"] = status
         item["source_mcp"] = mcp
         if warning:

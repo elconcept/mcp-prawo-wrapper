@@ -13,17 +13,16 @@ import asyncio
 import json
 import time
 from typing import Any
-from . import hydrate, md_store
 
 from fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 
-from . import __version__, audit
+from . import __version__, audit, hydrate, md_store
+from .coverage import Coverage, build_coverage
 from .instructions import INSTRUCTIONS
 from .pagination import paginate
 from .pool import POOL, SourceUnavailable
 from .registry import SOURCES, Source, catalog, get_source
-from .coverage import Coverage, build_coverage
 
 
 # Strukturalne kody bledow - drift test: kazdy kod w INSTRUCTIONS.
@@ -260,7 +259,15 @@ async def pl_list_sources(source_id: str | None = None, group: str | None = None
             raise PLLegalError("invalid_arg", "group must be 'pl' or 'eu'")
         result = {
             "server": f"prawo-pl-mcp {__version__}",
-            "sources": catalog(group),
+            "sources": catalog(group) + ([{
+                "id": "md", "name": "Local retrieved legal documents in Markdown",
+                "group": "pl", "coverage": "Only files actually saved under PRAWO_MD_DIR",
+                "runtime": "local:read-only", "searchable": False,
+                "document_id": "md_file returned by pl_search",
+                "native_tools": [],
+                "native_params": {"pl_get_document": {"document_id": "md_file"}},
+                "notes": "No access to the surrounding legal repository.",
+            }] if group in (None, "pl") else []),
             "hint": "pl_search / pl_get_document for the common path; "
             "pl_call for source-specific tools (key its `arguments` by the native "
             "names in `native_params`); pl_list_sources(source_id=...) for the "
@@ -269,6 +276,10 @@ async def pl_list_sources(source_id: str | None = None, group: str | None = None
         _audited("pl_list_sources", None, {"group": group}, started, {"sources": len(result["sources"])})
         return json.dumps(result, ensure_ascii=False, indent=1)
 
+    if source_id == "md":
+        return json.dumps({"source": "md", "tools": [],
+                           "hint": "Use pl_get_document(source='md', document_id=md_file)"},
+                          ensure_ascii=False)
     s = _resolve(source_id)
     try:
         tools = await POOL.list_tools(s)
@@ -388,7 +399,8 @@ async def pl_get_document(
     page = _resolve_page(page, page_number)
     if source == "md":
         try:
-            out = await md_store.read(document_id, page)
+            out = await md_store.read(document_id, page,
+                                      expected_sha256=(extra or {}).get("expected_sha256"))
         except (OSError, ValueError) as exc:
             raise PLLegalError("invalid_arg", str(exc)) from exc
         _audited("pl_get_document", "md", {"file": document_id, "page": page},
@@ -441,7 +453,6 @@ async def pl_get_document(
         else:
             raw = await _proxy_call(s, spec.tool, arguments)
             content, metadata = hydrate._decode(raw)
-            content = hydrate._valid(content)
     except (LookupError, ValueError) as exc:
         raise PLLegalError("upstream_error", str(exc)) from exc
 

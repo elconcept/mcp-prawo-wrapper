@@ -8,28 +8,30 @@ services:
     user: "1029:100"
     environment:
       TZ: Europe/Warsaw
-      PRAWO_PL_MCP_SOURCES: "repertorium,saos,nsa,isap,krs,kio,uodo,pmi,eu-sparql"
+      PRAWO_PL_MCP_SOURCES: "repertorium,saos,nsa,legal-cite,krs,kio,uodo,pmi,eu-sparql,eureka,eu-compliance"
       PRAWO_PL_MCP_URL_REPERTORIUM: "http://mcp-repertorium:8000/mcp"
       PRAWO_PL_MCP_URL_SAOS: "http://mcp-saos:8000/mcp"
       PRAWO_PL_MCP_URL_NSA: "http://mcp-nsa:8000/mcp"
-      PRAWO_PL_MCP_URL_ISAP: "http://mcp-isap:8000/mcp"
+      PRAWO_PL_MCP_URL_LEGAL_CITE: "http://legal-cite:8000/mcp"
       PRAWO_PL_MCP_URL_KRS: "http://mcp-krs:8000/mcp"
       PRAWO_PL_MCP_URL_KIO: "http://mcp-kio:8000/mcp"
       PRAWO_PL_MCP_URL_PMI: "http://pmi:8000/mcp"
       PRAWO_PL_MCP_URL_UODO: "http://mcp-uodo:3000/mcp"
       PRAWO_PL_MCP_URL_EU_SPARQL: "http://mcp-eu-sparql:8000/mcp"
-      PRAWO_DB_HOST: "prawo-vector-db"
-      PRAWO_DB_NAME: "prawo"
-      PRAWO_DB_USER: "prawo"
-      PRAWO_DB_PASSWORD_FILE: "/run/secrets/db_password"
+      PRAWO_PL_MCP_URL_EUREKA: "http://mcp-eureka:8000/mcp"
+      PRAWO_PL_MCP_URL_EU_COMPLIANCE: "http://mcp-eu-compliance:8000/mcp"
+      PRAWO_PL_MCP_TIMEOUT_LEGAL_CITE: "240"
+      PRAWO_HYDRATE_TIMEOUT: "250"
+      PRAWO_HYDRATE_CONCURRENCY: "3"
+      PRAWO_MD_DIR: "/legal_sources"
+
     volumes:
-      - /volume2/docker/mcp-saos/data:/saos:ro
-      - /volume2/docker/prawo-vector-db/postgres_password:/run/secrets/db_password:ro
+      - /volume1/legal/opracowania/zrodla_prawne_mcp:/legal_sources:rw
     networks:
       - prawo_private
       - saos
       - nsa
-      - isap
+      - cite
       - krs
       - repertorium
       - eu_sparql
@@ -53,9 +55,9 @@ networks:
   nsa:
     external: true
     name: cf_mcp_nsa
-  isap:
+  cite:
     external: true
-    name: cf_mcp_isap
+    name: cf_mcp_cite
   krs:
     external: true
     name: cf_mcp_krs

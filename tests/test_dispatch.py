@@ -81,17 +81,16 @@ async def test_krs_has_no_search():
     assert e.value.code == "invalid_arg"
 
 
-async def test_isap_rejects_dates():
+async def test_legal_cite_is_a_lookup_not_semantic_search():
     with pytest.raises(PLLegalError) as e:
-        await pl_search("isap", query="RODO", date_from="2020-01-01")
+        await pl_search("legal-cite", query="RODO", date_from="2020-01-01")
     assert e.value.code == "invalid_arg"
 
 
-async def test_legalize_requires_country():
+async def test_legacy_legalize_is_not_in_registry():
     with pytest.raises(PLLegalError) as e:
         await pl_search("legalize", query="constitucion")
-    assert e.value.code == "invalid_arg"
-    assert "country" in str(e.value)
+    assert e.value.code == "unknown_source"
 
 
 async def test_unknown_source():
@@ -165,16 +164,16 @@ async def test_get_document_page_must_be_one_based():
     assert e.value.code == "invalid_arg"
 
 
-async def test_isap_page_is_forwarded_natively_and_not_recut(pool):
-    """Konektor sam stronicuje kodeks - agregator nie moze ciac tego drugi raz."""
-    pool.response = "TEKST " * 2000  # 12000 znakow = 3 strony agregatora
-    raw = await pl_get_document("isap", "DU/2026/795", page=9)
+async def test_legal_cite_article_uses_aggregator_pagination(pool):
+    pool.response = "TEKST " * 2000
+    raw = await pl_get_document("legal-cite", "art. 415 KC", page=2)
     out = json.loads(raw)
     _, tool, args = pool.calls[0]
-    assert (tool, args["eli"], args["page"]) == ("get_act_text", "DU/2026/795", 9)
-    assert out["pagination"] == "native"
-    assert out["content"] == pool.response  # nic nie uciete lokalnie
-    assert "total_pages" not in out  # nie zgadujemy liczby stron dokumentu
+    assert tool == "verify_article"
+    assert args == {"citation": "art. 415 KC"}
+    assert out["pagination"] == "aggregator"
+    assert out["content_status"] == "article_only"
+    assert out["total_pages"] == 3
 
 
 async def test_aggregator_pagination_marks_itself(pool):
@@ -249,12 +248,12 @@ async def test_pl_call_unknown_tool_caught_before_upstream(pool):
 
 async def test_pl_call_tolerates_extra_fields_when_schema_satisfied(pool):
     """Forward-compat: nadmiarowe pole bez podobienstwa do znanego przechodzi."""
-    pool.schemas["uodo_stats"] = {
+    pool.schemas["uodo_search_decisions"] = {
         "type": "object",
-        "properties": {"period_from": {"type": "string"}, "period_to": {"type": "string"}},
-        "required": ["period_from"],
+        "properties": {"query": {"type": "string"}, "count": {"type": "integer"}},
+        "required": ["query"],
     }
-    await pl_call("uodo", "uodo_stats", args={"period_from": "2024-01-01", "sektor": "banki"})
+    await pl_call("uodo", "uodo_search_decisions", args={"query": "x", "sektor": "banki"})
     assert pool.calls[0][2]["sektor"] == "banki"
 
 
@@ -267,5 +266,6 @@ async def test_catalog_exposes_native_param_names(pool):
     assert eu["pl_get_document"]["required_extra"] == ["regulation"]
     saos = by_id["saos"]["native_params"]["pl_search"]
     assert (saos["query"], saos["page"], saos["page_base"]) == ("all", "pageNumber", 0)
-    assert by_id["isap"]["native_params"]["pl_get_document"]["pagination"] == "native"
+    assert by_id["legal-cite"]["native_params"]["pl_get_document"]["document_id"] == "citation"
+    assert by_id["md"]["native_params"]["pl_get_document"]["document_id"] == "md_file"
     assert pool.list_tools_calls == 0  # katalog nadal nie spawnuje niczego

@@ -19,7 +19,7 @@ def test_groups_valid():
 
 
 def test_core_pl_sources_present():
-    for expected in ("saos", "nsa", "isap", "krs", "kio", "uodo", "ustawy"):
+    for expected in ("saos", "nsa", "legal-cite", "krs", "kio", "uodo", "ustawy", "pmi", "eureka", "eu-compliance"):
         assert expected in SOURCES, f"Brak zrodla '{expected}' w registry"
 
 
