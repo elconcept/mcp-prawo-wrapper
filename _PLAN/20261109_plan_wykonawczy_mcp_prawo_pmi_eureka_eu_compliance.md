@@ -57,3 +57,18 @@
 
 ## 4. Status
 Ten dokument jest planem wykonania zakresu wyraźnie zleconego w bieżącej dyspozycji, nie upoważnia do zmian innej infrastruktury, do usuwania danych ani rozluźniania bezpieczeństwa Cloudflare.
+
+## 5. Dziennik wykonania — 2026-11-09
+
+### Ukończone i przetestowane
+- Portainer stack 64, mcp-eureka: running, healthy, UID:GID 1029:100. Kod upstream przypięty do de3e64e7294248b3efa3274a2c5e701012253332. Rzeczywiste tools/list: 4 narzędzia; list_categories zwróciło wynik (1494 znaki).
+- Portainer stack 65, mcp-eu-compliance: running, healthy, UID:GID 1029:100. Kod upstream przypięty do e5b556e60b4c92ae6606d4536dd1ceea027a041e. Pierwszy build odrzucony przez niezgodność SHA korpusu z ruchomej gałęzi HEAD. Następny build z versioned corpus-v1 i weryfikacją SHA zakończył się sukcesem. Rzeczywiste tools/list: 5 narzędzi; eu_article GDPR art. 33 zwróciło wynik (2162 znaki).
+- PMI: kontener na NAS to pmi, nie Cloudflare mcp-prawmi ani mcp-legal. Rzeczywiste tools/list: 4 narzędzia. pmi_get_document dla IV CSK 192/19 zwróciło 8251 znaków tekstu wraz z sygnaturą i URL.
+- Repertorium: gałąź GitHub feat/repertorium-json-20261109, commit c67ca8d128b6310d882181c6e68019fd30394449; kontener zrestartowany. Live format=json zwraca structuredContent i pełny JSON trafień; bez format nadal zwraca dotychczasowy tekst z document_id (3572 znaki).
+- Pobrano przykładowy rzeczywisty JSON konsolowego API Repertorium i potwierdzono pola trafień, m.in. document_id, tytul, fragment, zrodlo i zrodlo_url.
+
+### Nieukończone — bez wdrożenia produkcyjnego
+- Lokalna gałąź robocza wrappera: feat/repertorium-md-fulltext-20261109; server.py, registry.py i nowe md_store.py oraz hydrate.py zawierają niedokończony szkic. Tylko test składni AST zakończył się pozytywnie. Nie wykonano pełnych testów jednostkowych/E2E ani commitu/push.
+- Próba dalszej edycji wrappera została zablokowana przez zabezpieczenia narzędzia. Nie podjęto działań obchodzących blokadę. W działającym kontenerze nadal jest poprzedni obraz sha256:4e3b30efe98937e1ee5b89e91721f6bfdd1ea7cbd165941d91030350d8c766bb (healthy).
+- Nie montowano katalogu Markdown w legal, nie zmieniono timeoutów i instrukcji LEGAL-CITE, nie przełączono źródeł wrappera, nie usunięto PostgreSQL/ISAP ani innych danych. Problem Access na Cloudflare mcp-prawo pozostaje osobnym zadaniem.
+- Nie deployować roboczej gałęzi wrappera bez zakończenia implementacji i testów.
