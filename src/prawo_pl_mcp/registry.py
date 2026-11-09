@@ -117,33 +117,20 @@ SOURCES: dict[str, Source] = {
             "names with diacritics, e.g. 'Wojewódzki Sąd Administracyjny w Krakowie'.",
         ),
         Source(
-            id="isap",
-            name="ISAP/ELI - Polish legislation (Dziennik Ustaw, Monitor Polski)",
-            coverage="96k+ legal acts via the official Sejm ELI API. Metadata + full text.",
+            id="legal-cite",
+            name="LEGAL-CITE: exact Polish/EU statutory article from live source",
+            coverage="Single article or paragraph, including Dz.U. consolidated texts available as PDF.",
             group="pl",
-            runtime="npx",
-            package="@matematicsolutions/mcp-isap",
-            search=SearchSpec(
-                tool="search_acts",
-                query_param="title",
-                size_param="limit",
-                size_max=50,
-            ),
+            runtime="http",
+            package="legal-cite",
+            search=None,
             get=GetSpec(
-                tool="get_act_text",
-                id_param="eli",
-                id_hint="ELI identifier PUBLISHER/YEAR/POSITION, e.g. DU/2018/1000",
-                page_param="page",
+                tool="verify_article",
+                id_param="citation",
+                id_hint="Exact article, e.g. art. 23 DU/2024/917; optional extra={'na_dzien': '2025-01-01'}",
             ),
-            native_tools=("search_acts", "get_act", "get_act_text"),
-            notes="Needs mcp-isap >= 1.3.0 (native `page` on get_act_text; older "
-            "builds silently ignore it and always return the first page). "
-            "No date-range params - filter by year (number, via extra). "
-            "Act metadata via pl_call tool=get_act. Long acts are paginated by the "
-            "connector itself - jump straight to an article with "
-            "extra={'search_text': 'Art. 118.'}. The HTML of a BASE act is the text "
-            "AS PROMULGATED, not consolidated; for the wording in force fetch the "
-            "newest 'obwieszczenie' (tekst jednolity) the connector points to.",
+            native_tools=("verify_article", "list_acts"),
+            notes="Only a particular article is returned. Cold conversion of a PDF may take up to 90 seconds; do not confuse delayed response with a missing provision.",
         ),
         Source(
             id="krs",
@@ -280,14 +267,33 @@ SOURCES: dict[str, Source] = {
             "legislation by date range via pl_call tool=search_by_date_range.",
         ),
         Source(
+            id="eureka",
+            name="EUREKA: Polish tax interpretations and Ministry of Finance documents",
+            coverage="Tax interpretations from eureka.mf.gov.pl (full content availability depends on native tool).",
+            group="pl",
+            runtime="http",
+            package="mcp-eureka",
+            search=SearchSpec(
+                tool="search", query_param="query", date_from_param="date_from",
+                date_to_param="date_to", page_param="page", page_base=0,
+                size_param="page_size", size_max=50,
+            ),
+            get=GetSpec(
+                tool="get_interpretation", id_param="id",
+                id_hint="Native ID_INFORMACJI from EUREKA; get_interpretation may return only an extract",
+            ),
+            native_tools=("search", "get_interpretation", "search_by_signature", "list_categories"),
+            notes="Native get_interpretation truncates source content; do not describe an extract as full text.",
+        ),
+        Source(
             id="eu-compliance",
             name="EU compliance corpus - 14 regulations offline (GDPR, AI Act, DORA...)",
             coverage="Verbatim article lookup + FTS across GDPR, AI_ACT, DORA, NIS2, "
             "EIDAS2, CRA, DSA, DMA, DATA_ACT, DGA, LED, EPRIVACY, CYBERSECURITY_ACT, "
             "CER. Offline SQLite corpus (downloaded on connector's first start).",
             group="eu",
-            runtime="npx",
-            package="@matematicsolutions/mcp-eu-compliance",
+            runtime="http",
+            package="mcp-eu-compliance",
             search=SearchSpec(
                 tool="eu_search",
                 query_param="query",
@@ -304,38 +310,6 @@ SOURCES: dict[str, Source] = {
             native_tools=("eu_search", "eu_article", "eu_compare", "eu_check_applicability", "eu_evidence"),
             notes="Cross-regulation comparison via pl_call tool=eu_compare; "
             "applicability screening via pl_call tool=eu_check_applicability.",
-        ),
-        Source(
-            id="legalize",
-            name="Legalize - law-as-git corpus (32 jurisdictions, 21 EU)",
-            coverage="Versioned national legislation as Markdown from legalize-dev; "
-            "historical versions by commit SHA, reform timelines.",
-            group="eu",
-            runtime="uvx",
-            package="legalize-mcp",
-            search=SearchSpec(
-                tool="legalize_search_laws",
-                query_param="query",
-                size_param="limit",
-                size_max=100,
-                required_extra=("country",),
-            ),
-            get=GetSpec(
-                tool="legalize_get_law",
-                id_param="law_id",
-                id_hint="law_id (filename stem, e.g. BOE-A-1978-31229); REQUIRES "
-                "extra={'country': 'es'} (ISO alpha-2 lowercase)",
-                required_extra=("country",),
-            ),
-            native_tools=(
-                "legalize_list_countries",
-                "legalize_search_laws",
-                "legalize_get_law",
-                "legalize_get_meta",
-                "legalize_list_reforms",
-            ),
-            notes="legalize_search_laws needs a GitHub token (code search). "
-            "Reform timeline via pl_call tool=legalize_list_reforms.",
         ),
         Source(
             id="pmi",

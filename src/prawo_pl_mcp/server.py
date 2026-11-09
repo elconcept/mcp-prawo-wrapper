@@ -13,9 +13,7 @@ import asyncio
 import json
 import time
 from typing import Any
-import re
-
-from . import local_docs
+from . import hydrate, md_store
 
 from fastmcp import FastMCP
 from mcp.types import ToolAnnotations
@@ -281,6 +279,10 @@ async def pl_list_sources(source_id: str | None = None, group: str | None = None
     return json.dumps({"source": s.id, "tools": tools}, ensure_ascii=False, indent=1)
 
 
+async def _invoke_native(source: str, tool: str, arguments: dict) -> str:
+    return await _proxy_call(_resolve(source), tool, arguments)
+
+
 async def pl_search(
     source: str = "repertorium",
     query: str | None = None,
@@ -349,14 +351,21 @@ async def pl_search(
             clamped = max(clamped, spec.size_min)
         args.setdefault(spec.size_param, clamped)
 
+    if s.id == "repertorium":
+        args["format"] = "json"
     try:
         text = await _proxy_call(s, spec.tool, args)
+        if s.id == "repertorium":
+            try:
+                result = json.loads(text)
+            except ValueError as exc:
+                raise PLLegalError("upstream_error", "Repertorium did not return JSON") from exc
+            enriched = await hydrate.hydrate(result, query or "", _invoke_native)
+            text = json.dumps(enriched, ensure_ascii=False)
     except PLLegalError as exc:
         _audited("pl_search", s.id, args, started, {}, error=exc.code)
         raise
     _audited("pl_search", s.id, args, started, {"chars": len(text)})
-    if s.id == "repertorium":
-        asyncio.create_task(_prefetch_repertorium_hits(text))
     return text
 
 
@@ -368,94 +377,103 @@ async def pl_get_document(
     page_number: int | None = None,
     refresh: bool = False,
 ) -> str:
-    """Read a source document, cache complete text in PostgreSQL, paginate for the model.
+    """Page the stored Markdown source or fetch a native MCP document on demand.
 
-    'auto' accepts IDs from free Repertorium: saos:ID, nsa:HEX, kio:ID,
-    uodo:URN and eli:DU/YEAR/POSITION. SAOS is read from the local SQLite dump
-    with no import of the bulk corpus. Native page-based sources keep their paging.
+    source='md' accepts md_file from pl_search. No PostgreSQL, local SAOS
+    SQLite dump, or in-wrapper PDF extraction is used. For LEGAL-CITE supply
+    the concrete article citation, not the identifier of an entire act.
+    Cold conversion of a PDF by LEGAL-CITE may take ~90 seconds.
     """
     started = time.monotonic()
     page = _resolve_page(page, page_number)
-    try:
-        resolved_source, native_id = local_docs.route(source, document_id)
-    except ValueError as exc:
-        raise PLLegalError("invalid_arg", str(exc)) from exc
-
-    s = _resolve(resolved_source)
-    spec = s.get
-    key = local_docs.cache_id(s.id, str(native_id))
-    _otel_tag(s.id)
-    text = None if refresh else await local_docs.read_cached(key)
-    from_cache = text is not None
-    local_origin = None
-
-    if text is None and s.id == "saos":
-        text = await local_docs.read_saos_dump(str(native_id))
-        local_origin = "saos_dump" if text is not None else None
-    if text is None and s.id == "isap":
-        text = await local_docs.read_eli_pdf(str(native_id))
-        local_origin = "eli_pdf" if text is not None else None
-
-    if text is None:
-        args: dict[str, Any] = dict(extra or {})
-        missing = [p for p in spec.required_extra if p not in args]
-        if missing:
-            raise PLLegalError(
-                "invalid_arg", f"Source '{s.id}' document fetch requires extra {missing}. {spec.id_hint}"
-            )
-        if s.id == "uodo":
-            try:
-                native_id = await local_docs.resolve_uodo_id(s, str(native_id), POOL.call)
-            except SourceUnavailable as exc:
-                raise PLLegalError("source_unavailable", str(exc)) from exc
-        if s.id == "kio" and str(native_id).isdecimal():
-            native_id = int(native_id)
-        args.setdefault(spec.id_param, native_id)
-        if spec.page_param:
-            args.setdefault(spec.page_param, page)
+    if source == "md":
         try:
-            text = await _proxy_call(s, spec.tool, args)
-        except PLLegalError as exc:
-            _audited("pl_get_document", s.id, args, started, {}, error=exc.code)
-            raise
-        text = local_docs.text_from_connector(text, s.id)
+            out = await md_store.read(document_id, page)
+        except (OSError, ValueError) as exc:
+            raise PLLegalError("invalid_arg", str(exc)) from exc
+        _audited("pl_get_document", "md", {"file": document_id, "page": page},
+                 started, {"total_chars": out["total_chars"], "page": out["page"]})
+        return json.dumps(out, ensure_ascii=False)
 
-    if not from_cache and (not spec.page_param or local_origin) and not local_docs.looks_truncated(text):
-        await local_docs.save_cached(key, s.id, text)
+    extra = dict(extra or {})
+    if source in ("auto", "repertorium"):
+        prefix, sep, value = document_id.partition(":")
+        if not sep:
+            raise PLLegalError("invalid_arg", "Auto lookup requires a source-prefixed document_id")
+        if prefix == "eli":
+            source = "legal-cite"
+            document_id = str(extra.pop("citation", ""))
+            if not document_id:
+                raise PLLegalError(
+                    "invalid_arg",
+                    "A specific article is required, e.g. extra={'citation': 'art. 23 DU/2024/917'}; "
+                    "or use source='md' and md_file returned by pl_search.",
+                )
+        elif prefix == "sn":
+            source = "pmi"
+            signature = extra.pop("signature", None)
+            if not signature:
+                raise PLLegalError(
+                    "invalid_arg", "SN requires an exact signature in extra or a saved md_file.")
+            document_id = "ruling:" + str(signature)
+        else:
+            source, document_id = prefix, value
+    elif document_id.startswith(source + ":"):
+        document_id = document_id[len(source) + 1:]
 
-    if spec.page_param and not from_cache and not local_origin:
-        out = {
-            "content": text, "page": page, "page_number": page,
-            "pagination": "native", "total_chars": len(text),
-        }
+    s = _resolve(source)
+    _otel_tag(s.id)
+    spec = s.get
+    missing = [p for p in spec.required_extra if p not in extra]
+    if missing:
+        raise PLLegalError("invalid_arg", f"Source '{s.id}' requires extra={missing}. {spec.id_hint}")
+    arguments = dict(extra)
+    arguments.setdefault(spec.id_param, int(document_id) if
+                         s.id in {"saos", "kio"} and document_id.isdecimal()
+                         else document_id)
+    if spec.page_param:
+        arguments.setdefault(spec.page_param, page)
+    try:
+        if s.id == "uodo":
+            content, _, _, _ = await hydrate._uodo(
+                {"document_id": "uodo:" + document_id}, document_id, _invoke_native)
+            metadata = {}
+        else:
+            raw = await _proxy_call(s, spec.tool, arguments)
+            content, metadata = hydrate._decode(raw)
+            content = hydrate._valid(content)
+    except (LookupError, ValueError) as exc:
+        raise PLLegalError("upstream_error", str(exc)) from exc
+
+    if spec.page_param:
+        out = {"content": content, "page": page, "page_number": page,
+               "pagination": "native", "total_chars": len(content)}
     else:
-        out = paginate(text, page)
+        out = paginate(content, page)
         out["page"] = out["page_number"]
         out["pagination"] = "aggregator"
-
-    out["source"] = s.id
-    out["document_id"] = key
-    if s.id == "pmi":
-        out["source_url"] = local_docs.pmi_source_url(key)
-    out["complete"] = not local_docs.looks_truncated(text)
-    out["origin"] = "postgres" if from_cache else local_origin or "connector"
-    _audited(
-        "pl_get_document", s.id, {"document_id": key, "page": page},
-        started, {"total_chars": out["total_chars"], "page": page, "origin": out["origin"]},
-    )
+    out.update({
+        "source": s.id,
+        "document_id": (("eli:" + document_id) if s.id == "legal-cite"
+                        else s.id + ":" + str(document_id)),
+        "origin": "connector",
+        "complete": s.id not in {"eureka", "eu-sparql"},
+    })
+    if metadata.get("source_url"):
+        out["source_url"] = metadata["source_url"]
+    if s.id == "legal-cite":
+        out["content_status"] = "article_only"
+        out["notice"] = (
+            "Cold PDF processing can take up to 90 seconds. A timeout is not "
+            "evidence that this provision does not exist; retry as needed."
+        )
+    if s.id in {"eureka", "eu-sparql"}:
+        out["warning"] = (
+            "Native MCP may provide only an extract or metadata, not confirmed full text."
+        )
+    _audited("pl_get_document", s.id, {"document_id": document_id, "page": page},
+             started, {"total_chars": out["total_chars"], "page": page})
     return json.dumps(out, ensure_ascii=False)
-
-
-async def _prefetch_repertorium_hits(search_text: str) -> None:
-    """Best effort: hydrate up to 3 source documents behind a search result."""
-    ids = list(dict.fromkeys(re.findall(
-        r"(?m)^\s*document_id: ((?:saos|kio|uodo):[^\s]+)", search_text,
-    )))[:3]
-    for identifier in ids:
-        try:
-            await pl_get_document("auto", identifier)
-        except Exception:
-            continue
 
 
 async def pl_call(
@@ -494,8 +512,12 @@ async def pl_call(
     return text
 
 
-for _tool in (pl_list_sources, pl_search, pl_get_document, pl_call):
+for _tool in (pl_list_sources, pl_get_document, pl_call):
     mcp.tool(_tool, annotations=READ_ONLY)
+# pl_search now persists source Markdown in the explicitly mounted legal directory.
+mcp.tool(pl_search, annotations=ToolAnnotations(
+    readOnlyHint=False, idempotentHint=True, destructiveHint=False, openWorldHint=True,
+))
 
 
 def main() -> None:
