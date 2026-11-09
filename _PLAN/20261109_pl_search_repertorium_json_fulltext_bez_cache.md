@@ -5,6 +5,9 @@
 **Repozytoria:** \`elconcept/mcp-repertorium\`, \`elconcept/mcp-prawo-wrapper\`; punktem odniesienia pozostaje \`matematicsolutions/prawo-pl-mcp\` commit \`6c7bae4\`.  
 **Aktualna wersja \`mcp-repertorium\`:** commit \`8f4674cead5509e46e5e516871dbaff12e847516\`.  
 **Aktualna wersja wrappera \`main\`:** \`f192d13f2bc5a92f2191740ad744a2e29a17b2ce\`.  
+
+**Zastępuje wcześniejszy kierunek architektoniczny:** `_PLAN/20261108_repertorium_master_vector_db_embeddinggemma2.md` (MASTER DATABASE, pgvector/Qdrant/LanceDB i embeddingi), który jest **NIEAKTUALNY w świetle dyspozycji z 9 listopada 2026 r.** Nie realizować tamtego planu w odniesieniu do wrappera. Niniejszy dokument nie upoważnia do usuwania współdzielonych usług innych projektów.
+
 **Autoryzacja w tej rozmowie:** ustalenie wymagań, analiza wyłącznie w trybie odczytu i zapis planu Markdown. Żadnych zmian kodu, kontenerów, bazy, stacków ani przełączeń portalu.
 
 ## 1. Zatwierdzone kierunki funkcjonalne (nie tożsame ze zgodą na wykonanie)
