@@ -25,8 +25,13 @@ def hit(document_id="saos:123"):
 
 async def test_success_stores_full_source_without_inline_fulltext(store):
     async def invoke(source, tool, args):
-        assert (source, tool, args) == ("saos", "get_judgment", {"id": 123})
-        return "Pełny tekst orzeczenia. " * 600
+        assert (source, tool, args) == (
+            "saos", "get_judgment", {"id": 123, "offset": 0, "limit": 20000}
+        )
+        document = "Pełny tekst orzeczenia. " * 600
+        return (f"=== ORZECZENIE SAOS ===\n\nID SAOS    : 123\n\n"
+                f"--- Tresc (znaki 0-{len(document)} z {len(document)} lacznie) ---\n"
+                + document)
 
     result = await hydrate.hydrate({"trafienia": [hit()], "total": 1}, "wyrok", invoke)
     entry = result["trafienia"][0]
@@ -233,3 +238,52 @@ async def test_connector_error_does_not_discard_result(store):
     assert result["fragment"] == hit()["fragment"]
     assert result["fulltext_status"] == "fragment_only"
     assert "source rate limited" in result["warning"]
+
+async def test_saos_native_source_pagination_assembled_in_order():
+    full = ("A" * 20_000) + ("B" * 63)
+    calls = []
+
+    async def invoke(source, tool, args):
+        assert (source, tool) == ("saos", "get_judgment")
+        calls.append(args)
+        start = args["offset"]
+        end = min(start + args["limit"], len(full))
+        body = full[start:end]
+        prefix = (f"=== ORZECZENIE SAOS ===\n\nID SAOS    : 316066\n\n"
+                  f"--- Tresc (znaki {start}-{end} z {len(full)} lacznie) ---\n")
+        suffix = (
+            f"\n[...] Skrocono. Nastepny fragment: "
+            f"get_judgment(id=316066, offset={end}, limit=2000). "
+            "Pelna tresc: https://www.saos.org.pl/judgments/316066"
+            if end < len(full) else ""
+        )
+        return prefix + body + suffix
+
+    resolved = await hydrate._saos_full("316066", invoke)
+    assert full in resolved
+    assert "[...] Skrocono" not in resolved
+    assert [c["offset"] for c in calls] == [0, 20_000]
+    assert all(c["limit"] == 20_000 for c in calls)
+
+
+async def test_saos_native_page_with_different_id_fails_closed():
+    async def invoke(*_):
+        return ("=== ORZECZENIE SAOS ===\n\nID SAOS    : 999\n\n"
+                "--- Tresc (znaki 0-60 z 60 lacznie) ---\n" + "X" * 60)
+    with pytest.raises(LookupError, match="did not match"):
+        await hydrate._saos_full("316066", invoke)
+
+
+async def test_saos_native_missing_continuation_fails_closed():
+    async def invoke(*_):
+        return ("=== ORZECZENIE SAOS ===\n\nID SAOS    : 316066\n\n"
+                "--- Tresc (znaki 0-60 z 100 lacznie) ---\n" + "X" * 60)
+    with pytest.raises(LookupError, match="continuation"):
+        await hydrate._saos_full("316066", invoke)
+
+
+async def test_saos_native_plain_text_without_identity_fails_closed():
+    async def invoke(*_):
+        return "A response that looks like full source text but lacks its own identifier. " * 2
+    with pytest.raises(LookupError, match="verifiable judgment ID"):
+        await hydrate._saos_full("316066", invoke)

@@ -35,12 +35,12 @@ PR: https://github.com/elconcept/mcp-prawo-wrapper/pull/5 (Draft).
 
 ## 3. Kontrole wykonane
 
-- `pytest -q tests -k 'not smoke'`: **75 passed** (Mac, Python 3.14, środowisko izolowane).
+- `pytest -q tests -k 'not smoke'`: **79 passed** (Mac, Python 3.14, środowisko izolowane).
 - `ruff check` na zmienionych modułach: PASS.
 - `git diff --check`: PASS.
 - Parser `docker-compose.nas.yml`: PASS; wszystkie aliasy sieci mają deklaracje.
 - GitHub: commit i push gałęzi, PR #5 pozostaje Draft.
-- LIVE wywołania odrębnych MCP potwierdzają działanie wybranych narzędzi, ale **nie jest to test integracji nowego wrappera**.
+- LIVE wywołania odrębnych MCP potwierdzają działanie wybranych narzędzi. Osobno w izolowanej kopii nowego kodu na Mac wykonano pełne Repertorium JSON → SAOS 316066 (21 708 znaków) → Markdown → odczyt 5 stron i SHA-256. To NIE jest test docelowego bind mount Synology.
 
 ## 4. Przed produkcyjnym przełączeniem
 
@@ -53,8 +53,8 @@ PR: https://github.com/elconcept/mcp-prawo-wrapper/pull/5 (Draft).
 
 ## 5. Znane ograniczenia roboczego kodu
 
-- Wielostronicowe odpowiedzi bez pełnego tekstu są obecnie odrzucane i oznaczane jako `fragment_only` — nie zebrano jeszcze wszystkich stron natywnej paginacji przy hydration.
+- Paginacja SAOS offset/limit jest obecnie składana z walidacją identyfikatora, zakresów i długości całkowitej; wielostronicowe odpowiedzi innych źródeł nadal mogą być oznaczone jako `fragment_only`.
 - Nierozstrzygnięte mapowanie `sn:` jest kierowane po dokładnej sygnaturze do PMI; niedostępne/niepasujące dokumenty muszą pozostać `fragment_only`.
-- Oznaczenie `full` w źródłach z wolnym tekstem wymaga prób na faktycznych rekordach, nie samego spełnienia progu długości.
+- SAOS sprawdzono na rzeczywistym rekordzie 316066; oznaczenie `full` w pozostałych źródłach wymaga prób na faktycznych rekordach.
 - Nie zweryfikowano jeszcze fizycznych zapisów plików w `legal` ani produkcyjnego `verify_article` po nowej ścieżce sieciowej.
 - Nie zaimplementowano automatycznego commit/push/pull dla materiałów Markdown do innych klonów (nie jest częścią tej fazy).

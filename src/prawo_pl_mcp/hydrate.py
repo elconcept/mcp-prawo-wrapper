@@ -106,6 +106,91 @@ def _uodo_signature(raw: str) -> str | None:
     return None
 
 
+_SAOS_PAGE_RE = re.compile(
+    r"(?m)^--- Tresc \(znaki (\d+)-(\d+) z (\d+) lacznie\) ---\n"
+)
+_SAOS_NEXT_RE = re.compile(
+    r"\n\[\.\.\.\] Skrocono\. Nastepny fragment: "
+    r"get_judgment\(id=(\d+), offset=(\d+), limit=(\d+)\)\. "
+    r"Pelna tresc: [^\n]*\s*$"
+)
+_SAOS_ID_RE = re.compile(r"(?m)^ID SAOS\s*:\s*(\d+)\s*$")
+SAOS_CHUNK = 20_000
+
+
+async def _saos_full(native: str, invoke: Invoke) -> str:
+    """Assemble the *whole* ruling via SAOS native offset/limit, no local SAOS corpus.
+
+    Every page announces offsets and total source characters. Reject changing
+    IDs, missing chunks, duplicate headers and inconsistent final-page markers.
+    An oversized ruling or a network error must fail closed to fragment_only.
+    """
+    if not native.isdecimal():
+        raise LookupError("SAOS requires a numeric native judgment identifier")
+    source_id = int(native)
+    offset = 0
+    total = None
+    header = None
+    parts: list[str] = []
+
+    while True:
+        raw = await invoke("saos", "get_judgment", {
+            "id": source_id, "offset": offset, "limit": SAOS_CHUNK,
+        })
+        match = _SAOS_PAGE_RE.search(raw)
+        if not match:
+            # Compatibility with a source version that provides an unpaginated
+            # document; never accept a known-truncated response as complete.
+            if offset == 0:
+                text, meta = _decode(raw)
+                native_id = meta.get("id") or meta.get("document_id")
+                if not native_id:
+                    raise LookupError("SAOS returned text without verifiable judgment ID")
+                if str(native_id).removeprefix("saos:") != str(source_id):
+                    raise LookupError("SAOS returned a different judgment identifier")
+                return _valid(text)
+            raise LookupError("SAOS stopped returning its native pagination metadata")
+
+        begin, end, announced_total = (int(v) for v in match.groups())
+        candidate_header = raw[:match.start()]
+        identity = _SAOS_ID_RE.search(candidate_header)
+        if not identity or int(identity.group(1)) != source_id:
+            raise LookupError("SAOS judgment ID did not match the requested ID")
+        if header is None:
+            header = candidate_header
+        elif candidate_header != header:
+            raise LookupError("SAOS metadata changed between source pages")
+        if (begin != offset or end <= begin or
+                end > announced_total or announced_total > MAX_DOC_CHARS):
+            raise LookupError("Invalid SAOS source page offsets")
+        if total is None:
+            total = announced_total
+        elif total != announced_total:
+            raise LookupError("SAOS total document length changed between calls")
+
+        body = raw[match.end():]
+        footer = _SAOS_NEXT_RE.search(body)
+        if footer:
+            if int(footer.group(1)) != source_id or int(footer.group(2)) != end:
+                raise LookupError("SAOS next-page pointer is inconsistent")
+            body = body[:footer.start()]
+        if len(body) != end - begin:
+            raise LookupError("SAOS source page has a gap or unexpected truncation")
+        if (end < total) != bool(footer):
+            raise LookupError("SAOS failed to declare continuation accurately")
+        parts.append(body)
+        offset = end
+        if end == total:
+            break
+
+    source_text = "".join(parts)
+    if len(source_text) != total:
+        raise LookupError("SAOS assembled document size does not match source metadata")
+    return _valid(
+        header + f"--- Tresc (znaki 0-{total} z {total} lacznie) ---\n" + source_text
+    )
+
+
 async def _pmi_ruling(hit: dict, invoke: Invoke) -> tuple[str, str, str, str]:
     sig = _signature(str(hit.get("tytul") or hit.get("title") or ""))
     if not sig:
@@ -191,8 +276,11 @@ async def resolve(hit: dict, query: str, invoke: Invoke) -> tuple[str, str, str,
         if not native:
             raise LookupError("Empty native document ID")
         arg = int(native) if native.isdecimal() else native
-        raw = await invoke(source, tool, {param: arg})
-        content, _ = _decode(raw)
+        if prefix == "saos":
+            content = await _saos_full(native, invoke)
+        else:
+            raw = await invoke(source, tool, {param: arg})
+            content, _ = _decode(raw)
         return _valid(content), "full", source, tool, ""
     if prefix == "uodo":
         content, status, mcp, tool = await _uodo(hit, native, invoke)

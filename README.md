@@ -43,6 +43,10 @@ Turkish law: 16 institutions, one server. prawo-pl-mcp does the same for Poland:
   retrieve each identified document using its proper MCP. The full retrieved
   text goes to a separate Markdown file, never inline in search results.
   An unresolved record remains a `fragment_only` hit with mandatory disclosure.
+- SAOS native pagination is reconstructed by `get_judgment(id,offset,limit)`
+  in validated 20,000-character chunks. Source ID, total size and continuity
+  are checked before a document is labelled `full`. Partial SAOS responses
+  remain `fragment_only`, not deceptively complete.
 - Bounded Markdown reading. `pl_get_document(source="md", document_id=md_file)`
   paginates the saved content at roughly 5000 characters/page and verifies
   its SHA-256. A stable digest can be passed between pages to detect updates.

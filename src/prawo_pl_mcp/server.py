@@ -450,6 +450,9 @@ async def pl_get_document(
             content, _, _, _ = await hydrate._uodo(
                 {"document_id": "uodo:" + document_id}, document_id, _invoke_native)
             metadata = {}
+        elif s.id == "saos":
+            content = await hydrate._saos_full(document_id, _invoke_native)
+            metadata = {}
         else:
             raw = await _proxy_call(s, spec.tool, arguments)
             content, metadata = hydrate._decode(raw)
