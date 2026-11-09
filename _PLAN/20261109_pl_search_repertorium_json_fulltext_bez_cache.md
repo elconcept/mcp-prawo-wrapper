@@ -1,3 +1,5 @@
+> **ZASTĄPIONY 2026-11-09:** aktualna dyspozycja przewiduje zwracanie fragmentów Repertorium z nazwami plików Markdown, pobieranie pełnych dokumentów do `elconcept/legal` i odczyt przez `pl_get_document`. Nie wdrażać wariantu zwracającego pełne teksty bezpośrednio w `pl_search`. Aktualny plan: [_PLAN/20261109_repertorium_fragmenty_md_legal_i_legal_cite.md](20261109_repertorium_fragmenty_md_legal_i_legal_cite.md).
+
 # PLAN DECYZYJNY: Repertorium JSON → pełne dokumenty przez MCP, bez lokalnej bazy i embeddingów
 
 **Data:** 2026-11-09  
