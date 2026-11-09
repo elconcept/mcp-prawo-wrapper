@@ -98,3 +98,12 @@ PR: https://github.com/elconcept/mcp-prawo-wrapper/pull/5 (Draft).
 Osiągnięto: build i runtime Python 3.12 na NAS, test zapisu jako UID 1029, test pełnej treści SAOS, rzeczywisty E2E Repertorium → Markdown, regresję błędnego mapowania `ms:`, oraz rzeczywisty test `verify_article` po sieci `cf_mcp_cite`.
 
 Pozostało: weryfikacja zimnego LEGAL-CITE dla PDF-only i jego czasu, sprawdzenie tożsamości/kompletności rzeczywistych dokumentów **NSA i PMI** (same długie fragmenty nie mogą być mylone z pełnymi dokumentami), regresja `format=text` Repertorium w warunkach LIVE, kompletny przegląd PR oraz **przetestowany rollback stacka 58**. Stary stack i obraz są zachowane. Nie scalać, nie wdrażać produkcyjnie przed tymi bramkami.
+
+
+### Przygotowanie rollbacku (bez przełączenia)
+
+- Nadano staremu obrazowi produkcyjnemu dodatkowy lokalny tag `mcp-prawo-wrapper:pre-pr5-20261109`; odczyt Docker Engine potwierdził niezmienny digest `sha256:4e3b30efe98937e1ee5b89e91721f6bfdd1ea7cbd165941d91030350d8c766bb`, zgodny z aktualnym kontenerem stacka 58.
+- Pobraną bezpośrednio z Portainera oryginalną konfigurację stack 58 zapisano **tylko na NAS** w `/volume2/docker/_rollback/mcp-prawo-wrapper_stack58_pre_pr5_20261109.yml` (1978 bajtów). Ponowny odczyt przez FileStation i porównanie z bieżącym Portainer `StackFileInspect`: identyczna zawartość. Uprawnienia: katalog `0700`, plik `0600`, właściciel UID 1029. Treści nie wypchnięto do publicznego GitHub.
+- Odrębny kontener z tagu `pre-pr5-20261109` jako UID 1029 uruchomił poprawnie Python 3.12.16 i import starej aplikacji (exit 0), po czym został usunięty.
+- Procedura udokumentowana w `deploy/ROLLBACK_STACK_58.md` (commit `26610c34d2224001508d9ae0623a0ee49e3db8ec`).
+- **Nie wykonywano jeszcze pełnego operacyjnego rollbacku stacka 58**. Produkcja pozostaje uruchomiona na starym obrazie; przed przełączeniem nadal obowiązuje STOP.
