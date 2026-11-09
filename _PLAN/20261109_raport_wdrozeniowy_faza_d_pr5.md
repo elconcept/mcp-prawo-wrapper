@@ -107,3 +107,5 @@ Pozostało: weryfikacja zimnego LEGAL-CITE dla PDF-only i jego czasu, sprawdzeni
 - Odrębny kontener z tagu `pre-pr5-20261109` jako UID 1029 uruchomił poprawnie Python 3.12.16 i import starej aplikacji (exit 0), po czym został usunięty.
 - Procedura udokumentowana w `deploy/ROLLBACK_STACK_58.md` (commit `26610c34d2224001508d9ae0623a0ee49e3db8ec`).
 - **Nie wykonywano jeszcze pełnego operacyjnego rollbacku stacka 58**. Produkcja pozostaje uruchomiona na starym obrazie; przed przełączeniem nadal obowiązuje STOP.
+
+- Odrębny test wejścia `server.pl_get_document(source='md')` na nowym obrazie, z mount `:ro` i bez sieci: strony 1 i 2 orzeczenia `saos:316066`, poprawne `has_more` i identyczny SHA-256 między stronami; kod wyjścia 0. Kontener testowy usunięto.
