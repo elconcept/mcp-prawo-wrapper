@@ -259,8 +259,15 @@ async def resolve(hit: dict, query: str, invoke: Invoke) -> tuple[str, str, str,
     if prefix == "sn":
         content, status, mcp, tool = await _pmi_ruling(hit, invoke)
         return content, status, mcp, tool, ""
-    if not prefix or prefix not in {"saos", "nsa", "kio", "uodo", "eli", "eureka",
-                                    "celex", "eu-compliance", "pmi"}:
+    # A missing source may be resolved by an exact PMI signature/article.
+    # An EXPLICIT but unsupported namespace (e.g. ms:) is different: identical
+    # signatures may occur in unrelated courts, so PMI cannot prove document identity.
+    if prefix and prefix not in {"saos", "nsa", "kio", "uodo", "eli", "eureka",
+                                  "celex", "eu-compliance", "pmi"}:
+        raise LookupError(
+            f"Unsupported source namespace '{prefix}'; identity not verified by PMI"
+        )
+    if not prefix:
         try:
             content, status, mcp, tool = await _pmi_ruling(hit, invoke)
             return content, status, mcp, tool, ""
