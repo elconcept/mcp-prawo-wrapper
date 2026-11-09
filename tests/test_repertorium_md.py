@@ -229,6 +229,26 @@ async def test_native_eureka_excerpt_never_labelled_full(store):
     assert result["user_disclosure_required"]
 
 
+async def test_explicit_unsupported_source_does_not_infer_pmi_identity(store):
+    """A court portal ID is not interchangeable with a PMI hit on signature alone."""
+    item = hit("ms:151020250000503_I_C_000270_2015_Uz_2016-04-07_001")
+    item["tytul"] = "I C 270/15"
+    item["fragment"] = "Zachowany oryginalny fragment Repertorium."
+
+    async def never(*_):
+        raise AssertionError("Must not ask PMI for an unverified MS source ID")
+
+    data = await hydrate.hydrate({"trafienia": [item]}, "I C 270/15", never)
+    actual = data["trafienia"][0]
+    assert actual["fulltext_status"] == "fragment_only"
+    assert actual["fragment"] == item["fragment"]
+    assert actual["user_disclosure_required"]
+    assert "Unsupported source namespace" in actual["warning"]
+    saved = await md_store.read(actual["md_file"], 1)
+    assert saved["content_status"] == "fragment_only"
+
+
+
 async def test_connector_error_does_not_discard_result(store):
     async def invoke(*_):
         return '{"isError":true,"error":"source rate limited"}'
