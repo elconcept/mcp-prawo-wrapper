@@ -58,3 +58,43 @@ PR: https://github.com/elconcept/mcp-prawo-wrapper/pull/5 (Draft).
 - SAOS sprawdzono na rzeczywistym rekordzie 316066; oznaczenie `full` w pozostałych źródłach wymaga prób na faktycznych rekordach.
 - Nie zweryfikowano jeszcze fizycznych zapisów plików w `legal` ani produkcyjnego `verify_article` po nowej ścieżce sieciowej.
 - Nie zaimplementowano automatycznego commit/push/pull dla materiałów Markdown do innych klonów (nie jest częścią tej fazy).
+
+
+## 6. Kontynuacja NAS — testy i poprawka tożsamości źródła (9.11.2026)
+
+### Środowisko i izolacja
+
+- Stan starej produkcji ponownie odczytano przez Docker Engine: Portainer stack **58**, kontener healthy, UID:GID **1029:100**, obraz `sha256:4e3b30efe98937e1ee5b89e91721f6bfdd1ea7cbd165941d91030350d8c766bb` (`mcp-prawo-wrapper:local`), bez sieci `cf_mcp_cite` i bez docelowego bind mount. Nie zmieniano go.
+- Utworzono **wyłącznie** `/volume1/legal/opracowania/zrodla_prawne_mcp`, właściciel `abogada` (UID 1029), grupa `users` (GID 100), uprawnienia `2770` (FileStation pokazuje podstawowe `770`). Bez zmian katalogów nadrzędnych i bez rekurencyjnego `chown`.
+- Tymczasowy kontener jako `1029:100`, z bind mount wyłącznie tego katalogu i bez sieci, z sukcesem utworzył, odczytał i usunął plik testowy. Kod wyjścia 0.
+- Obrazy testowe budowano **na NAS** przez Docker Engine ze wskazanego commitu GitHub; nie pobierano projektu na MacBooka. Wersja po poprawce: `mcp-prawo-wrapper:pr5-29798cc-test` (image ID `sha256:ea0391f57714b5be8a14aa077011957b6e49f1dfc38be8ba482f736ffb54ab44`).
+
+### LIVE LEGAL-CITE i SAOS
+
+- Z odrębnego kontenera w `cf_mcp_cite`: `tools/list` potwierdziło `verify_article(citation, na_dzien?)` oraz `list_acts`.
+- `verify_article(citation="art. 23 DU/2024/917")`: `is_error=false`, 1615 znaków odpowiedzi z treścią art. 23 i metadanymi ELI; kontener zakończył się kodem 0. **Nie udowadnia to jeszcze scenariusza zimnej konwersji PDF.**
+- Test kodu nowego obrazu z prawdziwym `mcp-saos`: `saos:316066` → pełna treść 21 708 znaków → zapis Markdown przez bind mount jako UID 1029 → `pl_get_document` / `md_store.read` 5 stron ze zgodnym SHA-256 `9b3e0a8cae8e7b0b6ea3b7c9bef82d1456eaa2ed9315f4f0d51400810917eb43`. Kod wyjścia 0.
+
+### Repertorium → MD: znaleziony prawdziwy błąd mapowania
+
+- E2E na pierwszym obrazie `cda73ff` z żywym Repertorium dla `I C 270/15`: 9 trafień, 9 zapisów MD, statusy **5 full / 4 fragment_only**.
+- Rekord `ms:151020250000503_I_C_000270_2015_Uz_2016-04-07_001` błędnie otrzymał status `full`: automatyczny fallback PMI uznał samo pokrycie sygnatury `I C 270/15` za wystarczające, mimo jawnej przestrzeni `ms:`.
+- Kontrola zapisanego dokumentu wykazała **rzeczywistą niezgodność źródła**: trafienie `ms:` opisuje *wyrok* z 19.01.2016, a zwrócony tekst PMI jest *postanowieniem* z 29.10.2015. Zapis testowy był zatem błędnie skojarzony z innym dokumentem.
+- Commit `893c8f0335eec4f632c4381f3368c3b091b6c94e`: jawne nieobsługiwane prefiksy źródła nie uruchamiają fallbacku po samej sygnaturze; jedynie brak prefiksu pozwala na próbę PMI.
+- Commit `29798ccdda4ee192bd515e81c0ca310f287d44e4`: test regresyjny dla `ms:` i zachowania oryginalnego fragmentu.
+- Błędny plik wygenerowany **w tym teście** zachowano jako `.md.invalidated` (bez kasowania); nie jest odczytywany przez standardowe `pl_get_document(md)`. Nie zmieniano cudzych dokumentów.
+- Powtórzone E2E na obrazie `29798cc`: 9 trafień, **4 full / 5 fragment_only**; rekord `ms:` ma `fragment_only`, prawidłowo zapisany plik i obowiązkowe ostrzeżenie. Kod wyjścia 0.
+
+### Testy offline na NAS, Python 3.12
+
+- Obraz oparty o `python:3.12-slim` uruchamia Python **3.12.16**, importuje `FastMCP`, `hydrate` i `md_store` jako UID 1029 z rootfs tylko do odczytu; kod wyjścia 0.
+- Z dokładnego archiwum GitHub commitu `29798cc` uruchomiono w izolowanym kontenerze NAS: `pytest -q tests -k "not smoke"` → **80 passed in 3.10s**.
+- `ruff check src/prawo_pl_mcp/hydrate.py tests/test_repertorium_md.py` → **All checks passed**. Pierwsza próba Ruff zakończyła się błędem uruchomienia binarki na testowym `/tmp` (nie błędem kodu); poprawiono środowisko tymczasowego kontenera i powtórzono z kodem 0.
+- GitHub Actions `ci.yml` poszerzono o Ruff, build `Dockerfile.nas` i test importu runtime Python 3.12: commit `e7f3e4dc47c4785179ad0140cfa7ba64aa5b0f50`. **Brak zaobserwowanych przebiegów Actions; nie oznaczać CI jako green bez run ID.**
+- Po testach usunięto 9 tymczasowych kontenerów. Nie usunięto produkcji, jej danych, usług, baz ani wolumenów.
+
+### Bramka produkcji — nadal STOP
+
+Osiągnięto: build i runtime Python 3.12 na NAS, test zapisu jako UID 1029, test pełnej treści SAOS, rzeczywisty E2E Repertorium → Markdown, regresję błędnego mapowania `ms:`, oraz rzeczywisty test `verify_article` po sieci `cf_mcp_cite`.
+
+Pozostało: weryfikacja zimnego LEGAL-CITE dla PDF-only i jego czasu, sprawdzenie tożsamości/kompletności rzeczywistych dokumentów **NSA i PMI** (same długie fragmenty nie mogą być mylone z pełnymi dokumentami), regresja `format=text` Repertorium w warunkach LIVE, kompletny przegląd PR oraz **przetestowany rollback stacka 58**. Stary stack i obraz są zachowane. Nie scalać, nie wdrażać produkcyjnie przed tymi bramkami.
