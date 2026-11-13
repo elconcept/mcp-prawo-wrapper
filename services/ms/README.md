@@ -14,7 +14,7 @@ partial page ranges, non-XML responses, and malformed documents. It does
 not guess documents by signatures; identical case signatures can belong
 to unrelated courts.
 
-Deploy on NAS as separate Portainer stack `mcp-ms`. The container
+Deploy on NAS as separate Portainer stack `mcp-ms`; copy the three runtime files (server.py, asgi.py, Dockerfile) to /volume2/docker/mcp-ms before building. The container
 joins the existing `cf_mcp_krs` source network (also used by PMI).
 The unified wrapper uses
 `PRAWO_PL_MCP_URL_MS=http://mcp-ms:8000/mcp`; register `ms` in
