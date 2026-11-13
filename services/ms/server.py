@@ -86,7 +86,8 @@ def checked_document(native_id: str, details: ET.Element, content: ET.Element) -
     if not found:
         raise ValueError("MS XML lacks a document signature")
     actual = found.group(1).strip()
-    folded = lambda value: re.sub(r"\s+", "", value).casefold()
+    def folded(value: str) -> str:
+        return re.sub(r"\s+", "", value).casefold()
     if folded(actual) != folded(signature):
         raise ValueError(f"MS content signature '{actual}' differs from metadata '{signature}'")
     first_page = content.get("xFromPg")
