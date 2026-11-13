@@ -1,7 +1,7 @@
 services:
   mcp-ms:
     build:
-      context: /volume2/docker/mcp-prawo-wrapper/services/ms
+      context: /volume2/docker/mcp-ms
       dockerfile: Dockerfile
     image: mcp-ms:local
     container_name: mcp-ms
