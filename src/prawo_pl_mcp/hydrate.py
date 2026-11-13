@@ -256,6 +256,23 @@ async def resolve(hit: dict, query: str, invoke: Invoke) -> tuple[str, str, str,
     identifier = str(hit.get("document_id") or "").strip()
     prefix, sep, native = identifier.partition(":")
     prefix = prefix.lower() if sep else ""
+    if prefix == "ms":
+        if not native:
+            raise LookupError("Empty MS document identifier")
+        raw = await invoke("ms", "ms_get_document", {"document_id": native})
+        content, metadata = _decode(raw)
+        if (metadata.get("document_id") != identifier or
+                metadata.get("identity_verified") is not True or
+                metadata.get("content_status") != "full"):
+            raise LookupError("Official MS identity/full-text verification missing")
+        expected = _signature(str(hit.get("tytul") or hit.get("title") or ""))
+        if expected and _fold(expected) != _fold(str(metadata.get("signature") or "")):
+            raise LookupError("MS judgment signature differs from Repertorium hit")
+        expected_date = str(hit.get("data") or "")[:10]
+        if re.fullmatch(r"\d{4}-\d{2}-\d{2}", expected_date):
+            if expected_date != metadata.get("date"):
+                raise LookupError("MS judgment date differs from Repertorium hit")
+        return _valid(content), "full", "ms", "ms_get_document", ""
     if prefix == "sn":
         content, status, mcp, tool = await _pmi_ruling(hit, invoke)
         return content, status, mcp, tool, ""
