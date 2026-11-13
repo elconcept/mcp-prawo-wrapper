@@ -312,6 +312,22 @@ SOURCES: dict[str, Source] = {
             "applicability screening via pl_call tool=eu_check_applicability.",
         ),
         Source(
+            id="ms",
+            name="MS: official Polish common-court judgments by exact document ID",
+            coverage="Published judgments and reasons from the official ncourt MS XML API by stable ms: identifier. Not a signature search.",
+            group="pl",
+            runtime="http",
+            package="mcp-ms",
+            search=None,
+            get=GetSpec(
+                tool="ms_get_document",
+                id_param="document_id",
+                id_hint="Exact source ID, e.g. ms:151020250000503_I_C_000270_2015_Uz_2016-04-07_001",
+            ),
+            native_tools=("ms_get_document",),
+            notes="ID and signature are verified against official metadata and complete XML. No Playwright needed.",
+        ),
+        Source(
             id="pmi",
             name="PrawMi public HTML (rulings, statutes, articles)",
             coverage="Public prawmi.pl/orzeczenie and prawmi.pl/ustawa pages: exact ruling signatures, indexed statute titles and article/full-act text.",
