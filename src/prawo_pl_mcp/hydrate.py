@@ -277,7 +277,7 @@ async def resolve(hit: dict, query: str, invoke: Invoke) -> tuple[str, str, str,
         content, status, mcp, tool = await _pmi_ruling(hit, invoke)
         return content, status, mcp, tool, ""
     # A missing source may be resolved by an exact PMI signature/article.
-    # An EXPLICIT but unsupported namespace (e.g. ms:) is different: identical
+    # An EXPLICIT but unsupported namespace (e.g. unknown:) is different: identical
     # signatures may occur in unrelated courts, so PMI cannot prove document identity.
     if prefix and prefix not in {"saos", "nsa", "kio", "uodo", "eli", "eureka",
                                   "celex", "eu-compliance", "pmi"}:
