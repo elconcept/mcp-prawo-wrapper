@@ -60,6 +60,8 @@ sometimes longer. Do not interpret a timeout as proof that an article does not e
 - If `fulltext_status="fragment_only"`, explicitly tell the user:
   "Nie udało się uzyskać pełnej treści dokumentu. Przedstawiono wyłącznie
   fragment z Repertorium." Never present such a fragment as a full ruling.
+- An `ms:` identifier resolves through the independent official MS XML MCP; no
+  signature-based substitution or browser automation is allowed.
 - `article_only` means one verified article, not the whole statute.
 - A missing `md_file` or `write_failed` means the text was not persisted.
   Don't invent paths; read the underlying source or report the failure.
