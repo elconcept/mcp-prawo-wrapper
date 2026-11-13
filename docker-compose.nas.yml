@@ -8,13 +8,14 @@ services:
     user: "1029:100"
     environment:
       TZ: Europe/Warsaw
-      PRAWO_PL_MCP_SOURCES: "repertorium,saos,nsa,legal-cite,krs,kio,uodo,pmi,eu-sparql,eureka,eu-compliance"
+      PRAWO_PL_MCP_SOURCES: "repertorium,saos,nsa,ms,legal-cite,krs,kio,uodo,pmi,eu-sparql,eureka,eu-compliance"
       PRAWO_PL_MCP_URL_REPERTORIUM: "http://mcp-repertorium:8000/mcp"
       PRAWO_PL_MCP_URL_SAOS: "http://mcp-saos:8000/mcp"
       PRAWO_PL_MCP_URL_NSA: "http://mcp-nsa:8000/mcp"
       PRAWO_PL_MCP_URL_LEGAL_CITE: "http://legal-cite:8080/mcp"
       PRAWO_PL_MCP_URL_KRS: "http://mcp-krs:8000/mcp"
       PRAWO_PL_MCP_URL_KIO: "http://mcp-kio:8000/mcp"
+      PRAWO_PL_MCP_URL_MS: "http://mcp-ms:8000/mcp"
       PRAWO_PL_MCP_URL_PMI: "http://pmi:8000/mcp"
       PRAWO_PL_MCP_URL_UODO: "http://mcp-uodo:3000/mcp"
       PRAWO_PL_MCP_URL_EU_SPARQL: "http://mcp-eu-sparql:8000/mcp"

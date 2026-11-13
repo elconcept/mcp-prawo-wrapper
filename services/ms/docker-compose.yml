@@ -1,0 +1,22 @@
+services:
+  mcp-ms:
+    build:
+      context: /volume2/docker/mcp-ms
+      dockerfile: Dockerfile
+    image: mcp-ms:local
+    container_name: mcp-ms
+    user: "1029:100"
+    environment:
+      TZ: Europe/Warsaw
+    networks:
+      - sources
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz',timeout=4)"]
+      interval: 30s
+      timeout: 6s
+      retries: 4
+    restart: unless-stopped
+networks:
+  sources:
+    external: true
+    name: cf_mcp_krs
