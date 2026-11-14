@@ -230,8 +230,8 @@ async def test_native_eureka_excerpt_never_labelled_full(store):
 
 
 async def test_explicit_unsupported_source_does_not_infer_pmi_identity(store):
-    """A court portal ID is not interchangeable with a PMI hit on signature alone."""
-    item = hit("ms:151020250000503_I_C_000270_2015_Uz_2016-04-07_001")
+    """An unknown source ID cannot be replaced by a PMI case-signature collision."""
+    item = hit("unknown:151020250000503_I_C_000270_2015_Uz_2016-04-07_001")
     item["tytul"] = "I C 270/15"
     item["fragment"] = "Zachowany oryginalny fragment Repertorium."
 
