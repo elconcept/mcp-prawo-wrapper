@@ -1,10 +1,10 @@
 services:
-  mcp-prawo-wrapper:
+  mcp-prawo:
     build:
-      context: /volume2/docker/mcp-prawo-wrapper
+      context: /volume2/docker/mcp-prawo
       dockerfile: Dockerfile.nas
-    image: mcp-prawo-wrapper:local
-    container_name: mcp-prawo-wrapper
+    image: mcp-prawo:0.3.0
+    container_name: mcp-prawo
     user: "1029:100"
     environment:
       TZ: Europe/Warsaw
@@ -29,7 +29,7 @@ services:
     volumes:
       - /volume1/legal/opracowania/zrodla_prawne_mcp:/legal_sources:rw
     networks:
-      - prawo_private
+      - cloudflare_prawo
       - saos
       - nsa
       - cite
@@ -38,7 +38,7 @@ services:
       - eu_sparql
       - uodo
     ports:
-      - "8420:8000"
+      - "127.0.0.1:8420:8000"
     healthcheck:
       test: ["CMD","python","-c","import socket; socket.create_connection(('127.0.0.1',8000),timeout=5).close()"]
       interval: 30s
@@ -47,9 +47,9 @@ services:
     restart: unless-stopped
 
 networks:
-  prawo_private:
+  cloudflare_prawo:
     external: true
-    name: mcp_prawo_private
+    name: cf_mcp_prawo
   saos:
     external: true
     name: cf_mcp_saos

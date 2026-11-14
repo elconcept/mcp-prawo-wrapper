@@ -17,7 +17,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-
 #: Ile wpisow audytu nie dalo sie zapisac w tym procesie (0 = komplet).
 NIEUDANE_ZAPISY = 0
 

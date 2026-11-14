@@ -7,3 +7,8 @@ build/
 .pytest_cache/
 .ruff_cache/
 uv.lock
+
+# Local credentials and deployment snapshots
+.cf-service-token
+.secrets/
+*.bak-before-mcp-prawo-*

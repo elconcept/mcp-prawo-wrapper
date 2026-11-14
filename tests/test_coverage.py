@@ -35,23 +35,23 @@ def test_known_gaps_never_silently_empty():
 def test_every_gap_has_id_and_a_way_out():
     gaps = build_coverage().known_gaps
     ids = [g.id for g in gaps]
-    assert len(ids) == len(set(ids)), "duplicate gap ids: {}".format(ids)
+    assert len(ids) == len(set(ids)), f"duplicate gap ids: {ids}"
     for gap in gaps:
         assert gap.id and gap.family and gap.missing
-        assert gap.fallback, "gap {} names a hole but no way around it".format(gap.id)
+        assert gap.fallback, f"gap {gap.id} names a hole but no way around it"
 
 
 def test_gap_families_exist():
     cov = build_coverage()
     names = {f.name for f in cov.families}
     for gap in cov.known_gaps:
-        assert gap.family in names, "gap {} points at unknown family {}".format(gap.id, gap.family)
+        assert gap.family in names, f"gap {gap.id} points at unknown family {gap.family}"
 
 
 def test_snapshot_families_carry_a_capture_date():
     for fam in build_coverage().families:
         if not fam.live:
-            assert fam.captured_at, "snapshot family {} carries no captured_at".format(fam.name)
+            assert fam.captured_at, f"snapshot family {fam.name} carries no captured_at"
 
 
 def test_tool_is_registered_and_returns_coverage():
