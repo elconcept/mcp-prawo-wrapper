@@ -28,6 +28,16 @@ INIT_TIMEOUT_S = float(os.environ.get("PRAWO_PL_MCP_INIT_TIMEOUT", "180"))
 CALL_TIMEOUT_S = float(os.environ.get("PRAWO_PL_MCP_TIMEOUT", "90"))
 
 
+def _timeout_for(source: Source) -> float:
+    """Allow slow source-specific cold queries without delaying all connectors."""
+    value = float(os.environ.get(
+        f"PRAWO_PL_MCP_TIMEOUT_{_env_key(source)}", str(CALL_TIMEOUT_S)
+    ))
+    if value <= 0:
+        raise ValueError("MCP timeout must be positive")
+    return value
+
+
 class SourceUnavailable(Exception):
     """Zrodlo nieosiagalne po przejsciu calej drabinki provisioning."""
 
@@ -83,7 +93,7 @@ class SourcePool:
 
             url = _remote_url(source)
             if url:
-                client = Client(StreamableHttpTransport(url), timeout=CALL_TIMEOUT_S)
+                client = Client(StreamableHttpTransport(url), timeout=_timeout_for(source))
                 try:
                     await asyncio.wait_for(client.__aenter__(), timeout=INIT_TIMEOUT_S)
                 except Exception as exc:  # serwer zdalny niedostepny - czytelny blad
@@ -107,7 +117,7 @@ class SourcePool:
                 )
 
             transport = StdioTransport(command=command, args=args, keep_alive=True)
-            client = Client(transport, timeout=CALL_TIMEOUT_S)
+            client = Client(transport, timeout=_timeout_for(source))
             try:
                 await asyncio.wait_for(client.__aenter__(), timeout=INIT_TIMEOUT_S)
             except Exception as exc:  # spawn/handshake failed - czytelny blad, nie traceback

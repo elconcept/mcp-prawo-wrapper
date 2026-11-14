@@ -13,8 +13,9 @@ INSTRUCTIONS = """\
 One MCP server for Polish legal data. Aggregates independent MCP connectors
 (case law, legislation, company register, tax rulings, public procurement,
 data-protection decisions + optional EU corpus) behind 4 unified tools.
-Connectors run as on-demand subprocesses; the first call to a source may take
-several seconds (package download + spawn), subsequent calls are fast.
+Connectors may be remote MCP servers on the NAS, or on-demand subprocesses.
+LEGAL-CITE cold conversion of PDF-only Dz.U. may need up to 90 seconds,
+sometimes longer. Do not interpret a timeout as proof that an article does not exist.
 
 ## Call order
 
@@ -53,8 +54,17 @@ several seconds (package download + spawn), subsequent calls are fast.
 - Do not answer past the edge of this federation: this server holds no corpus of
   its own. When a search comes back empty, call `pl_coverage` and relay what it
   says is missing. Absence here is not absence in Polish law.
-- Legal answers require documents, not search snippets: after `pl_search`,
-  fetch the actual text with `pl_get_document` before quoting or reasoning.
+- Default `pl_search` uses Repertorium; its fragments are discovery only.
+  If `md_file` is returned, read it using `pl_get_document(source="md",
+  document_id=md_file, page=1)` and paginate until `has_more` is false.
+- If `fulltext_status="fragment_only"`, explicitly tell the user:
+  "Nie udało się uzyskać pełnej treści dokumentu. Przedstawiono wyłącznie
+  fragment z Repertorium." Never present such a fragment as a full ruling.
+- An `ms:` identifier resolves through the independent official MS XML MCP; no
+  signature-based substitution or browser automation is allowed.
+- `article_only` means one verified article, not the whole statute.
+- A missing `md_file` or `write_failed` means the text was not persisted.
+  Don't invent paths; read the underlying source or report the failure.
 - NEVER invent case signatures, ELI identifiers, KRS numbers or dates - use
   only values returned by tools. Quote verbatim from document content.
 - Always cite: source name + identifier + date + source URL when returned.
@@ -83,9 +93,9 @@ Errors carry a `[code]` prefix:
 - Present results with full citations (signature + date + court/body).
 - When comparing case law across sources (e.g. SAOS vs NSA), state which
   database each ruling comes from.
-- Administrative-court matters: prefer the NSA source; general courts and
-  Supreme Court: SAOS. Statutes: ISAP. If unsure, check coverage in
-  `pl_list_sources`.
+- Administrative-court matters: prefer NSA; general courts and Supreme Court:
+  SAOS or exact-signature PMI. For Polish statutory articles use LEGAL-CITE;
+  EUREKA tax interpretations may contain only an extract. Consult coverage.
 - Disclaimer where relevant: court rulings are not a source of law in Poland
   (art. 87 of the Constitution) - reference material, not binding precedent.
 """
